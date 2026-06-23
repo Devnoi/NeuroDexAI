@@ -1,0 +1,1923 @@
+<template>
+  <div class="rit-game-container glass-panel-glow">
+    <div class="game-header">
+      <div class="header-info">
+        <h2>ระบบประเมินการเอื้อมสกัดกั้นวัตถุ (RIT)</h2>
+        <p class="subtitle">การประเมินความคล่องแคล่วและการละเลยการใช้งานมือซ้าย-ขวา (Learned Non-Use)</p>
+      </div>
+      <div class="game-timer" :class="{ 'timer-low': timeLeft < 15 }">
+        <span class="timer-label">เวลาที่เหลือ:</span>
+        <span class="timer-value">{{ timeLeft }} วินาที</span>
+      </div>
+    </div>
+
+    <!-- Setup Form (Before Game Starts) -->
+    <div v-if="gameState === 'setup'" class="setup-screen">
+      <div class="instructions-card glass-panel">
+        <h3>การตั้งค่าและปรับเทียบสำหรับคลินิก</h3>
+        <p>กรุณากรอกข้อมูลประวัติผู้ป่วยและเลือกการตั้งค่าการประเมินผลด้านล่าง</p>
+        
+        <div class="form-group">
+          <label for="patient-id">กรอกหรือเลือก รหัสผู้ป่วย (Patient ID):</label>
+          <div class="patient-input-row">
+            <input 
+              id="patient-id" 
+              v-model="patientForm.patientId" 
+              class="form-input" 
+              placeholder="เช่น PT-901"
+            />
+            <input 
+              id="patient-name" 
+              v-model="patientForm.name" 
+              class="form-input" 
+              placeholder="ชื่อผู้ป่วย"
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="therapist-email">อีเมลนักกายภาพบำบัด (สำหรับรับการเตือนเมื่อคะแนนลดลง):</label>
+          <input 
+            id="therapist-email" 
+            v-model="patientForm.therapistEmail" 
+            class="form-input" 
+            placeholder="therapist@neurodex.com"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>ซีกร่างกายที่กล้ามเนื้ออ่อนแรง (Affected Side):</label>
+          <div class="radio-group">
+            <label class="radio-label" :class="{ active: patientForm.affectedSide === 'left' }">
+              <input type="radio" value="left" v-model="patientForm.affectedSide"> ซีกซ้าย
+            </label>
+            <label class="radio-label" :class="{ active: patientForm.affectedSide === 'right' }">
+              <input type="radio" value="right" v-model="patientForm.affectedSide"> ซีกขวา
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>โหมดการประเมิน:</label>
+          <div class="radio-group">
+            <label class="radio-label" :class="{ active: gameMode === 'random' }">
+              <input type="radio" value="random" v-model="gameMode"> โหมดสุ่ม (ประเมินความพึงใจในการเลือกใช้มือ)
+            </label>
+            <label class="radio-label" :class="{ active: gameMode === 'forced' }">
+              <input type="radio" value="forced" v-model="gameMode"> โหมดบังคับข้าง (ประเมินการเอื้อมมือเฉพาะเจาะจง)
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="cognitive-rule">กฎการกรองความรู้ความเข้าใจ (Cognitive Rule):</label>
+          <select id="cognitive-rule" v-model="cognitiveRule" class="form-input">
+            <option value="red_circle">สกัดกั้นเฉพาะวงกลมสีแดงเท่านั้น (หลีกเลี่ยงเป้าหมายอื่น)</option>
+            <option value="red_square">สกัดกั้นเฉพาะสี่เหลี่ยมสีแดงเท่านั้น (หลีกเลี่ยงเป้าหมายอื่น)</option>
+            <option value="blue_circle">สกัดกั้นเฉพาะวงกลมสีน้ำเงินเท่านั้น (หลีกเลี่ยงเป้าหมายอื่น)</option>
+            <option value="blue_square">สกัดกั้นเฉพาะสี่เหลี่ยมสีน้ำเงินเท่านั้น (หลีกเลี่ยงเป้าหมายอื่น)</option>
+          </select>
+        </div>
+
+        <div class="setup-controls">
+          <button class="btn-primary" @click="startCalibration" :disabled="!patientForm.patientId || !patientForm.name">
+            เริ่มการเชื่อมต่อกล้องและโมเดลประมวลผล
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Calibration / Testing Screen -->
+    <div v-show="gameState === 'calibrating' || gameState === 'playing'" class="arena-wrapper">
+      <!-- Hidden Video Element for MediaPipe -->
+      <video ref="videoElement" class="hidden-video" autoplay playsinline muted></video>
+
+      <!-- Main Interaction Canvas -->
+      <div class="canvas-container">
+        <canvas ref="canvasElement" width="800" height="500" class="game-canvas glass-panel"></canvas>
+
+
+        <!-- Interactive Overlay Messages -->
+        <div v-if="loadingModel" class="canvas-overlay loading-overlay">
+          <div class="spinner"></div>
+          <p>กำลังโหลดโมเดลตรวจจับการเคลื่อนไหวมือ (MediaPipe Hands)...</p>
+        </div>
+
+        <div v-if="runtimeError" class="canvas-overlay error-overlay">
+          <h3>ไม่สามารถเริ่มการประเมินได้</h3>
+          <p class="warning">{{ runtimeError }}</p>
+          <div class="error-actions">
+            <button class="btn-primary" @click="retryCamera">ลองเชื่อมต่อกล้องอีกครั้ง</button>
+            <button class="btn-secondary" @click="abortSession">กลับไปตั้งค่าใหม่</button>
+          </div>
+        </div>
+
+        <div v-if="gameState === 'calibrating' && !loadingModel && !runtimeError" class="canvas-overlay calibration-overlay">
+          <h3>ปรับเทียบตำแหน่งและท่าทางของมือ</h3>
+          <p>จัดท่าทางให้มือทั้งสองข้างปรากฏอยู่บนหน้าจอกล้องอย่างชัดเจน</p>
+          <div v-if="autoStartCountdown > 0" class="countdown-panel">
+            <span class="countdown-number">{{ autoStartCountdown }}</span>
+            <p class="highlight">ตำแหน่งมือถูกต้อง ระบบจะเริ่มการทดสอบโดยอัตโนมัติ</p>
+          </div>
+          <p class="highlight" v-else-if="leftHandDetected && rightHandDetected">ตรวจจับพบมือทั้งสองข้างแล้ว! กรุณาวางนิ้วชี้ซ้ายในโซนพักซ้าย และนิ้วชี้ขวาในโซนพักขวาเพื่อเริ่มทดสอบ</p>
+          <p class="warning" v-else>กำลังรอการตรวจจับมือและสรีระ (มือซ้าย: {{ leftHandDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }}, มือขวา: {{ rightHandDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }}, สรีระ: {{ poseDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }})...</p>
+          <p class="subtitle" v-if="leftHandDetected && rightHandDetected && autoStartCountdown === 0">ระบบจะนับถอยหลังทันทีเมื่อวางนิ้วชี้ทั้งสองข้างในโซนพักถูกต้อง</p>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Sidebar -->
+      <div class="telemetry-sidebar glass-panel">
+        <h4>ข้อมูลการตรวจจับสด</h4>
+        <div class="telemetry-stat">
+          <span class="label">กฎการสกัดเป้าหมาย:</span>
+          <span class="value accent-rule">{{ formatRuleName(cognitiveRule) }}</span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">ระดับความยาก (ความเร็ว):</span>
+          <span class="value accent-teal">{{ currentTargetSpeed.toFixed(1) }} px/เฟรม</span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">ระบบประมวลผลภาพ:</span>
+          <span class="value" :class="processedFrameCount > 0 ? 'text-success' : 'text-danger'">
+            {{ processedFrameCount > 0 ? `กำลังทำงาน (${processedFrameCount} เฟรม)` : 'ยังไม่เริ่มอ่านภาพ' }}
+          </span>
+          <span v-if="modelError" class="value text-danger">{{ modelError }}</span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">มือซ้าย / ขวา:</span>
+          <span class="value" :class="leftHandDetected ? 'text-success' : 'text-danger'">
+            ซ้าย: {{ leftHandDetected ? 'ตรวจพบ' : 'ไม่พบ' }}
+          </span>
+          <span class="value" :class="rightHandDetected ? 'text-success' : 'text-danger'">
+            ขวา: {{ rightHandDetected ? 'ตรวจพบ' : 'ไม่พบ' }}
+          </span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">สรีระผู้ป่วย:</span>
+          <span class="value" :class="poseDetected ? 'text-success' : 'text-danger'">
+            {{ poseDetected ? `ตรวจพบ ${visiblePoseLandmarkCount} จุดข้อต่อ` : 'ยังไม่พบโครงร่างลำตัว' }}
+          </span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">ท่าทางปัจจุบัน:</span>
+          <span class="value" :class="poseDetected ? 'text-success' : 'text-danger'">
+            {{ postureStatus }}
+          </span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">บันทึกวิดีโอ:</span>
+          <span class="value" :class="isRecordingVideo ? 'text-success' : 'text-danger'">
+            {{ recordingStatus }}
+          </span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">สถานะเป้าหมาย:</span>
+          <span class="value highlight-state">
+            {{ stateMachineState === 'resting' ? 'พักอยู่กับที่' : (stateMachineState === 'moving' ? 'กำลังเคลื่อนเอื้อม' : (stateMachineState === 'hit' ? 'สกัดเป้าสำเร็จ' : 'เป้าหมายผ่านไป')) }}
+          </span>
+        </div>
+        <div class="telemetry-stat">
+          <span class="label">จำนวนข้อมูลเฟรม:</span>
+          <span class="value">{{ sessionLogs.length }} เฟรม</span>
+        </div>
+        
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" :style="{ width: `${(60 - timeLeft) / 60 * 100}%` }"></div>
+        </div>
+
+        <button class="btn-secondary abort-btn" @click="abortSession">
+          ยกเลิกการประเมิน
+        </button>
+      </div>
+    </div>
+
+    <!-- Results Saving Screen -->
+    <div v-if="gameState === 'submitting'" class="submitting-screen glass-panel">
+      <div class="spinner"></div>
+      <h3>กำลังวิเคราะห์และประมวลผลข้อมูลจลนศาสตร์...</h3>
+      <p>กำลังรันสมการประเมินเพื่อหาความเร็ว (Speed), ความแม่นยำ (Accuracy), และคุณภาพทางคลินิก (Quality) ของมือซ้ายและขวา</p>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onUnmounted, nextTick, computed } from 'vue';
+import axios from 'axios';
+import MedicalAssessmentEngine from '../utils/MedicalAssessmentEngine.js';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+const emit = defineEmits(['session-saved']);
+
+// Component Refs
+const videoElement = ref(null);
+const canvasElement = ref(null);
+
+// Game State Management
+const gameState = ref('setup'); // setup, calibrating, playing, submitting
+const loadingModel = ref(true);
+const handDetected = ref(false);
+const cameraReady = ref(false);
+const timeLeft = ref(60);
+const sessionLogs = ref([]);
+const runtimeError = ref('');
+const autoStartCountdown = ref(0);
+
+
+
+// Patient State
+const patientForm = reactive({
+  patientId: '',
+  name: '',
+  affectedSide: 'right',
+  therapistEmail: 'therapist@neurodex.com'
+});
+
+// Game Configurations
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 500;
+const targetRadius = 38;
+const fingerIndicatorRadius = 8;
+
+// Particle System State
+const particles = ref([]);
+
+// Adaptive Difficulty Variables
+const BASE_SPEED = 4.5;
+const currentTargetSpeed = ref(BASE_SPEED);
+const BASE_SPAWN_INTERVAL = 3000; // ms
+const currentSpawnInterval = ref(BASE_SPAWN_INTERVAL);
+const rollingOutcomes = ref([]); // array of { timestamp, hit }
+
+// Cognitive Rule Variables
+const cognitiveRule = ref('red_circle'); // red_circle, red_square, blue_circle, blue_square
+
+const getRuleParts = () => {
+  const [color, shape] = cognitiveRule.value.split('_');
+  return { color, shape };
+};
+
+const createTargetCognitiveProperties = () => {
+  const rule = getRuleParts();
+  const shouldSpawnCorrectTarget = Math.random() < 0.65;
+  if (shouldSpawnCorrectTarget) {
+    return {
+      colorName: rule.color,
+      shape: rule.shape,
+      isCorrectTarget: true
+    };
+  }
+
+  const colors = ['red', 'blue'];
+  const shapes = ['circle', 'square'];
+  let colorName = colors[Math.floor(Math.random() * colors.length)];
+  let shape = shapes[Math.floor(Math.random() * shapes.length)];
+
+  if (colorName === rule.color && shape === rule.shape) {
+    if (Math.random() > 0.5) {
+      colorName = colors.find(color => color !== rule.color);
+    } else {
+      shape = shapes.find(targetShape => targetShape !== rule.shape);
+    }
+  }
+
+  return {
+    colorName,
+    shape,
+    isCorrectTarget: false
+  };
+};
+
+// Two Rest Zones (Left and Right at bottom center)
+const leftRestZone = {
+  x: CANVAS_WIDTH / 2 - 190,
+  y: CANVAS_HEIGHT - 110,
+  width: 170,
+  height: 90
+};
+
+const rightRestZone = {
+  x: CANVAS_WIDTH / 2 + 20,
+  y: CANVAS_HEIGHT - 110,
+  width: 170,
+  height: 90
+};
+
+// Gameplay variables
+let cameraHelper = null;
+let cameraStream = null;
+let handsInstance = null;
+let poseInstance = null;
+let animationFrameId = null;
+let gameTimerId = null;
+let targetSpawnTimerId = null;
+let difficultyScalerIntervalId = null;
+let autoStartTimerId = null;
+let lastResolvedTarget = null;
+let isProcessingFrame = false;
+let lastModelProcessTime = 0;
+let mediaRecorder = null;
+let recordedChunks = [];
+let currentRecordingUrl = null;
+
+// Telemetry state machine variables
+const stateMachineState = ref('resting'); // resting, moving, hit, miss
+const leftFingerCoords = reactive({ x: 0, y: 0 });
+const rightFingerCoords = reactive({ x: 0, y: 0 });
+const leftHandDetected = ref(false);
+const rightHandDetected = ref(false);
+const isLeftFingerInRestZone = ref(false);
+const isRightFingerInRestZone = ref(false);
+const poseDetected = ref(false);
+const visiblePoseLandmarkCount = ref(0);
+const poseLandmarks = ref([]);
+const handLandmarks = ref([]);
+const processedFrameCount = ref(0);
+const lastDetectionMessage = ref('รอเริ่มกล้อง');
+const modelError = ref('');
+const postureStatus = ref('รอตรวจจับท่าทาง');
+const recordingStatus = ref('ยังไม่เริ่มบันทึก');
+const isRecordingVideo = ref(false);
+
+const gameMode = ref('random'); // random, forced
+const activeTarget = ref(null); // { x, y, vx, vy, side, spawnTime, requiredHand, shape, color, isCorrectTarget, outcome }
+
+// Logging throttle: 30Hz = ~33.3ms interval
+let lastLogTime = 0;
+const LOG_INTERVAL_MS = 33.3;
+
+const formatRuleName = (rule) => {
+  if (rule === 'red_circle') return 'วงกลมสีแดง 🔴';
+  if (rule === 'red_square') return 'สี่เหลี่ยมสีแดง 🟥';
+  if (rule === 'blue_circle') return 'วงกลมสีน้ำเงิน 🔵';
+  if (rule === 'blue_square') return 'สี่เหลี่ยมสีน้ำเงิน 🟦';
+  return '';
+};
+
+// Particle Class definition for Visual Feedback
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.size = Math.random() * 4 + 2;
+    this.speedX = Math.random() * 6 - 3;
+    this.speedY = Math.random() * 6 - 3;
+    this.color = color;
+    this.alpha = 1.0;
+    this.decay = Math.random() * 0.03 + 0.015;
+  }
+  update() {
+    this.x += this.speedX;
+    this.y += this.speedY;
+    this.alpha -= this.decay;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = this.color;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+const triggerParticleBurst = (x, y, color) => {
+  for (let i = 0; i < 20; i++) {
+    particles.value.push(new Particle(x, y, color));
+  }
+};
+
+const POSE_CONNECTIONS = [
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
+  [12, 14], [14, 16], [16, 18], [16, 20], [16, 22],
+  [23, 25], [25, 27], [27, 29], [27, 31],
+  [24, 26], [26, 28], [28, 30], [28, 32],
+  [0, 2], [2, 4], [0, 5], [5, 7], [9, 10]
+];
+
+const HAND_CONNECTIONS = [
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  [0, 9], [9, 10], [10, 11], [11, 12],
+  [0, 13], [13, 14], [14, 15], [15, 16],
+  [0, 17], [17, 18], [18, 19], [19, 20],
+  [5, 9], [9, 13], [13, 17]
+];
+
+const POSE_LANDMARK_LABELS = {
+  0: 'ศีรษะ/จมูก',
+  1: 'ตาซ้ายใน',
+  2: 'ตาซ้าย',
+  3: 'ตาซ้ายนอก',
+  4: 'ตาขวาใน',
+  5: 'ตาขวา',
+  6: 'ตาขวานอก',
+  7: 'หูซ้าย',
+  8: 'หูขวา',
+  9: 'ปากซ้าย',
+  10: 'ปากขวา',
+  11: 'ไหล่ซ้าย',
+  12: 'ไหล่ขวา',
+  13: 'ศอกซ้าย',
+  14: 'ศอกขวา',
+  15: 'ข้อมือซ้าย',
+  16: 'ข้อมือขวา',
+  19: 'นิ้วมือซ้าย',
+  20: 'นิ้วมือขวา',
+  23: 'สะโพกซ้าย',
+  24: 'สะโพกขวา',
+  25: 'เข่าซ้าย',
+  26: 'เข่าขวา',
+  27: 'ข้อเท้าซ้าย',
+  28: 'ข้อเท้าขวา',
+  29: 'ส้นเท้าซ้าย',
+  30: 'ส้นเท้าขวา',
+  31: 'ปลายเท้าซ้าย',
+  32: 'ปลายเท้าขวา'
+};
+
+const toCanvasPoint = (landmark) => ({
+  x: (1 - landmark.x) * CANVAS_WIDTH,
+  y: landmark.y * CANVAS_HEIGHT,
+  visible: landmark.visibility === undefined || landmark.visibility > 0.5
+});
+
+const drawPoseSkeleton = (ctx) => {
+  if (!poseLandmarks.value.length) return;
+
+  const points = poseLandmarks.value.map(toCanvasPoint);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  POSE_CONNECTIONS.forEach(([start, end]) => {
+    const a = points[start];
+    const b = points[end];
+    if (!a?.visible || !b?.visible) return;
+
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = 'rgba(56, 189, 248, 0.35)';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  });
+
+  points.forEach((point, index) => {
+    if (!point.visible) return;
+
+    const isUpperBody = [11, 12, 13, 14, 15, 16, 23, 24].includes(index);
+    ctx.fillStyle = isUpperBody ? '#fbbf24' : '#38bdf8';
+    ctx.strokeStyle = '#0b0f19';
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(251, 191, 36, 0.3)';
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, isUpperBody ? 5 : 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    if (POSE_LANDMARK_LABELS[index]) {
+      ctx.font = "11px 'Inter', sans-serif";
+      ctx.fillStyle = '#e0f2fe';
+      ctx.shadowBlur = 0;
+      ctx.fillText(POSE_LANDMARK_LABELS[index], point.x + 7, point.y - 7);
+    }
+  });
+
+  ctx.restore();
+};
+
+const drawPrivacyEyeMask = (ctx) => {
+  if (!poseLandmarks.value.length) return;
+
+  const points = poseLandmarks.value.map(toCanvasPoint);
+  const visibleFacePoints = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    .map(index => points[index])
+    .filter(point => point?.visible);
+
+  if (visibleFacePoints.length < 2) return;
+
+  const leftEyeCandidates = [points[1], points[2], points[3]].filter(point => point?.visible);
+  const rightEyeCandidates = [points[4], points[5], points[6]].filter(point => point?.visible);
+  const nose = points[0]?.visible ? points[0] : null;
+
+  const averagePoint = (items) => ({
+    x: items.reduce((sum, point) => sum + point.x, 0) / items.length,
+    y: items.reduce((sum, point) => sum + point.y, 0) / items.length
+  });
+
+  const leftEye = leftEyeCandidates.length ? averagePoint(leftEyeCandidates) : null;
+  const rightEye = rightEyeCandidates.length ? averagePoint(rightEyeCandidates) : null;
+  const center = leftEye && rightEye
+    ? { x: (leftEye.x + rightEye.x) / 2, y: (leftEye.y + rightEye.y) / 2 }
+    : nose;
+
+  if (!center) return;
+
+  const xValues = visibleFacePoints.map(point => point.x);
+  const yValues = visibleFacePoints.map(point => point.y);
+  const faceWidth = Math.max(56, Math.max(...xValues) - Math.min(...xValues));
+  const faceHeight = Math.max(22, Math.max(...yValues) - Math.min(...yValues));
+  const maskWidth = Math.min(190, Math.max(74, faceWidth * 1.55));
+  const maskHeight = Math.min(54, Math.max(24, faceHeight * 0.58));
+
+  ctx.save();
+  ctx.fillStyle = '#020617';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 12;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+  ctx.beginPath();
+  ctx.roundRect(
+    center.x - maskWidth / 2,
+    center.y - maskHeight / 2,
+    maskWidth,
+    maskHeight,
+    Math.min(12, maskHeight / 2)
+  );
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = "bold 10px 'Inter', sans-serif";
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PRIVACY', center.x, center.y);
+  ctx.restore();
+};
+
+const getVisibleLandmark = (index, minVisibility = 0.35) => {
+  const landmark = poseLandmarks.value[index];
+  if (!landmark) return null;
+  if (landmark.visibility !== undefined && landmark.visibility < minVisibility) return null;
+  return landmark;
+};
+
+const distanceBetween = (a, b) => {
+  if (!a || !b) return null;
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
+const updatePostureStatus = () => {
+  if (!poseLandmarks.value.length || !poseDetected.value) {
+    postureStatus.value = 'รอตรวจจับท่าทาง';
+    return;
+  }
+
+  const leftShoulder = getVisibleLandmark(11);
+  const rightShoulder = getVisibleLandmark(12);
+  const leftHip = getVisibleLandmark(23);
+  const rightHip = getVisibleLandmark(24);
+  const leftKnee = getVisibleLandmark(25, 0.25);
+  const rightKnee = getVisibleLandmark(26, 0.25);
+  const leftAnkle = getVisibleLandmark(27, 0.25);
+  const rightAnkle = getVisibleLandmark(28, 0.25);
+
+  const shoulderHip = distanceBetween(leftShoulder, leftHip) || distanceBetween(rightShoulder, rightHip);
+  const hipKnee = distanceBetween(leftHip, leftKnee) || distanceBetween(rightHip, rightKnee);
+  const kneeAnkle = distanceBetween(leftKnee, leftAnkle) || distanceBetween(rightKnee, rightAnkle);
+  const hipAnkle = distanceBetween(leftHip, leftAnkle) || distanceBetween(rightHip, rightAnkle);
+
+  if (!shoulderHip || !hipKnee) {
+    postureStatus.value = 'เห็นลำตัวบางส่วน';
+    return;
+  }
+
+  const legExtensionRatio = hipAnkle && hipKnee && kneeAnkle ? hipAnkle / (hipKnee + kneeAnkle) : 0;
+  const kneeLowerThanHip = (leftHip && leftKnee && leftKnee.y > leftHip.y + 0.08) ||
+    (rightHip && rightKnee && rightKnee.y > rightHip.y + 0.08);
+
+  if (legExtensionRatio > 0.72 && kneeLowerThanHip) {
+    postureStatus.value = 'ยืนอยู่';
+  } else if (kneeLowerThanHip) {
+    postureStatus.value = 'นั่งอยู่';
+  } else {
+    postureStatus.value = 'กำลังจัดท่าทาง';
+  }
+};
+
+const resetRecordingState = () => {
+  if (currentRecordingUrl) {
+    URL.revokeObjectURL(currentRecordingUrl);
+    currentRecordingUrl = null;
+  }
+  recordedChunks = [];
+  mediaRecorder = null;
+  isRecordingVideo.value = false;
+  recordingStatus.value = 'ยังไม่เริ่มบันทึก';
+};
+
+const startSessionRecording = () => {
+  if (!canvasElement.value?.captureStream || typeof MediaRecorder === 'undefined') {
+    recordingStatus.value = 'เบราว์เซอร์นี้ไม่รองรับการบันทึกวิดีโอ';
+    return;
+  }
+
+  resetRecordingState();
+
+  try {
+    const stream = canvasElement.value.captureStream(30);
+    const supportedTypes = [
+      'video/mp4;codecs=h264',
+      'video/mp4;codecs=vp9',
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm'
+    ];
+    const mimeType = supportedTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      isRecordingVideo.value = false;
+      saveRecordingToComputer();
+    };
+
+    mediaRecorder.start(1000);
+    isRecordingVideo.value = true;
+    recordingStatus.value = 'กำลังบันทึกวิดีโอการทดสอบ';
+  } catch (error) {
+    console.error('Video recording failed:', error);
+    recordingStatus.value = 'เริ่มบันทึกวิดีโอไม่สำเร็จ';
+    isRecordingVideo.value = false;
+  }
+};
+
+const stopSessionRecording = () => {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+    isRecordingVideo.value = false;
+    return;
+  }
+
+  try {
+    recordingStatus.value = 'กำลังเตรียมไฟล์วิดีโอ';
+    mediaRecorder.stop();
+  } catch (error) {
+    console.error('Stopping video recording failed:', error);
+    recordingStatus.value = 'หยุดบันทึกวิดีโอไม่สำเร็จ';
+    isRecordingVideo.value = false;
+  }
+};
+
+const saveRecordingToComputer = () => {
+  if (!recordedChunks.length) {
+    recordingStatus.value = 'ไม่มีข้อมูลวิดีโอให้บันทึก';
+    return;
+  }
+
+  let mimeType = 'video/mp4';
+  if (mediaRecorder && mediaRecorder.mimeType && MediaRecorder.isTypeSupported(mediaRecorder.mimeType)) {
+    if (mediaRecorder.mimeType.includes('mp4')) {
+      mimeType = mediaRecorder.mimeType;
+    }
+  }
+
+  const blob = new Blob(recordedChunks, { type: mimeType });
+  currentRecordingUrl = URL.createObjectURL(blob);
+  const patientId = patientForm.patientId || 'patient';
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `RIT-${patientId}-${timestamp}.mp4`;
+  const link = document.createElement('a');
+  link.href = currentRecordingUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  recordingStatus.value = `บันทึกไฟล์แล้ว: ${filename}`;
+};
+
+const drawHandSkeletons = (ctx) => {
+  if (!handLandmarks.value.length) return;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  handLandmarks.value.forEach((hand) => {
+    const points = hand.landmarks.map(toCanvasPoint);
+    const color = hand.side === 'left' ? '#818cf8' : '#c084fc';
+    const glow = hand.side === 'left' ? 'rgba(129, 140, 248, 0.55)' : 'rgba(192, 132, 252, 0.55)';
+
+    HAND_CONNECTIONS.forEach(([start, end]) => {
+      const a = points[start];
+      const b = points[end];
+      if (!a || !b) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = glow;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    });
+
+    points.forEach((point, index) => {
+      ctx.fillStyle = index === 0 || index === 8 ? '#34d399' : color;
+      ctx.strokeStyle = '#0b0f19';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = glow;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, index === 8 ? 6 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+
+    const wrist = points[0];
+    if (wrist) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = "bold 12px 'Inter', sans-serif";
+      ctx.textAlign = 'left';
+      ctx.fillText(hand.side === 'left' ? 'มือซ้าย' : 'มือขวา', wrist.x + 8, wrist.y - 8);
+    }
+  });
+
+  ctx.restore();
+};
+
+const cancelAutoStartCountdown = () => {
+  if (autoStartTimerId) {
+    clearInterval(autoStartTimerId);
+    autoStartTimerId = null;
+  }
+  autoStartCountdown.value = 0;
+};
+
+const beginAutoStartCountdown = () => {
+  if (autoStartTimerId || gameState.value !== 'calibrating') return;
+
+  autoStartCountdown.value = 3;
+  autoStartTimerId = setInterval(() => {
+    const handsReady = processedFrameCount.value > 0 && isLeftFingerInRestZone.value && isRightFingerInRestZone.value;
+    if (!handsReady || gameState.value !== 'calibrating') {
+      cancelAutoStartCountdown();
+      return;
+    }
+
+    autoStartCountdown.value -= 1;
+    if (autoStartCountdown.value <= 0) {
+      clearInterval(autoStartTimerId);
+      autoStartTimerId = null;
+      startGame();
+    }
+  }, 1000);
+};
+
+const updateAutoStartCountdown = () => {
+  if (gameState.value !== 'calibrating' || loadingModel.value || runtimeError.value) {
+    cancelAutoStartCountdown();
+    return;
+  }
+
+  const handsReady = processedFrameCount.value > 0 && isLeftFingerInRestZone.value && isRightFingerInRestZone.value;
+  if (handsReady) {
+    beginAutoStartCountdown();
+  } else {
+    cancelAutoStartCountdown();
+  }
+};
+
+const hasAvailableCamera = () => {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    runtimeError.value = 'เบราว์เซอร์นี้ไม่รองรับการเข้าถึงกล้อง กรุณาเปิดด้วย Chrome, Edge หรือ Safari เวอร์ชันล่าสุด';
+    return false;
+  }
+
+  return true;
+};
+
+const startCalibration = async () => {
+  gameState.value = 'calibrating';
+  loadingModel.value = true;
+  runtimeError.value = '';
+  modelError.value = '';
+  processedFrameCount.value = 0;
+  lastDetectionMessage.value = 'กำลังเตรียมโมเดลตรวจจับ';
+  cancelAutoStartCountdown();
+
+  const cameraReady = hasAvailableCamera();
+  if (!cameraReady) {
+    loadingModel.value = false;
+    return;
+  }
+  
+  await nextTick();
+  initMediaPipe();
+};
+
+const getCameraErrorMessage = (error) => {
+  const name = error?.name || '';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'ไม่พบอุปกรณ์กล้องในเครื่องนี้ กรุณาเชื่อมต่อเว็บแคม ตรวจสอบว่าเปิดกล้องในระบบปฏิบัติการแล้ว หรือเปิดผ่านเบราว์เซอร์ภายนอกที่เข้าถึงกล้องได้';
+  }
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return 'เบราว์เซอร์ยังไม่ได้รับสิทธิ์ใช้กล้อง กรุณากดอนุญาตกล้อง หรือเปิดสิทธิ์ Camera ให้เว็บไซต์นี้ในการตั้งค่าเบราว์เซอร์';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'กล้องถูกใช้งานโดยโปรแกรมอื่นหรือระบบไม่สามารถเปิดกล้องได้ กรุณาปิด Zoom/Meet/แอปกล้องอื่นแล้วลองใหม่';
+  }
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+    return 'กล้องที่พบไม่รองรับค่าภาพที่ร้องขอ กรุณาลองใช้กล้องตัวอื่นหรือรีเฟรชหน้าแล้วลองใหม่';
+  }
+  return 'ไม่สามารถเข้าถึงกล้องถ่ายภาพได้ กรุณาตรวจสอบกล้องและสิทธิ์การใช้งานในเบราว์เซอร์แล้วลองใหม่';
+};
+
+const retryCamera = async () => {
+  stopAllTimers();
+  runtimeError.value = '';
+  loadingModel.value = true;
+  const cameraReady = hasAvailableCamera();
+  if (!cameraReady) {
+    loadingModel.value = false;
+    return;
+  }
+  await nextTick();
+  initMediaPipe();
+};
+
+const initMediaPipe = async () => {
+  if (!window.Hands || !window.Pose) {
+    loadingModel.value = false;
+    runtimeError.value = 'ไม่พบ MediaPipe Hands/Pose กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่อีกครั้ง';
+    return;
+  }
+
+  handsInstance = new window.Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+
+  handsInstance.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.25,
+    minTrackingConfidence: 0.25
+  });
+
+  handsInstance.onResults(onHandResults);
+
+  poseInstance = new window.Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+
+  poseInstance.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    minDetectionConfidence: 0.25,
+    minTrackingConfidence: 0.25
+  });
+
+  poseInstance.onResults(onPoseResults);
+
+  try {
+    if (handsInstance.initialize) await handsInstance.initialize();
+    if (poseInstance.initialize) await poseInstance.initialize();
+    modelError.value = '';
+  } catch (error) {
+    console.error('MediaPipe model initialization failed:', error);
+    loadingModel.value = false;
+    runtimeError.value = 'โหลดโมเดลตรวจจับมือ/สรีระไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
+    return;
+  }
+
+  startCameraStream();
+};
+
+const startCameraStream = async () => {
+  if (!videoElement.value) return;
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'user'
+      },
+      audio: false
+    });
+
+    videoElement.value.srcObject = cameraStream;
+    await new Promise((resolve) => {
+      if (videoElement.value.readyState >= 2) {
+        resolve();
+        return;
+      }
+      videoElement.value.onloadedmetadata = () => resolve();
+    });
+    await videoElement.value.play();
+    cameraReady.value = true;
+    loadingModel.value = false;
+    startCanvasLoop();
+  } catch (err) {
+    console.error("Camera access failed:", err);
+    cameraReady.value = false;
+    loadingModel.value = false;
+    runtimeError.value = getCameraErrorMessage(err);
+  }
+};
+
+const onPoseResults = (results) => {
+  if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+    poseLandmarks.value = results.poseLandmarks;
+    visiblePoseLandmarkCount.value = results.poseLandmarks.filter(
+      landmark => landmark.visibility === undefined || landmark.visibility > 0.5
+    ).length;
+    poseDetected.value = visiblePoseLandmarkCount.value >= 8;
+  } else {
+    poseLandmarks.value = [];
+    visiblePoseLandmarkCount.value = 0;
+    poseDetected.value = false;
+  }
+
+  updatePostureStatus();
+  updateDetectionMessage();
+};
+
+const onHandResults = (results) => {
+  leftHandDetected.value = false;
+  rightHandDetected.value = false;
+  isLeftFingerInRestZone.value = false;
+  isRightFingerInRestZone.value = false;
+  handLandmarks.value = [];
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    handDetected.value = true;
+
+    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+      const landmarks = results.multiHandLandmarks[i];
+      const tip = landmarks[8];
+      const canvasX = (1 - tip.x) * CANVAS_WIDTH;
+      const canvasY = tip.y * CANVAS_HEIGHT;
+      const side = canvasX < CANVAS_WIDTH / 2 ? 'left' : 'right';
+
+      handLandmarks.value.push({ side, landmarks });
+
+      if (side === 'left') {
+        leftFingerCoords.x = canvasX;
+        leftFingerCoords.y = canvasY;
+        leftHandDetected.value = true;
+
+        isLeftFingerInRestZone.value = 
+          canvasX >= leftRestZone.x &&
+          canvasX <= leftRestZone.x + leftRestZone.width &&
+          canvasY >= leftRestZone.y &&
+          canvasY <= leftRestZone.y + leftRestZone.height;
+      } else {
+        rightFingerCoords.x = canvasX;
+        rightFingerCoords.y = canvasY;
+        rightHandDetected.value = true;
+
+        isRightFingerInRestZone.value = 
+          canvasX >= rightRestZone.x &&
+          canvasX <= rightRestZone.x + rightRestZone.width &&
+          canvasY >= rightRestZone.y &&
+          canvasY <= rightRestZone.y + rightRestZone.height;
+      }
+    }
+  } else {
+    handDetected.value = false;
+  }
+
+  updateDetectionMessage();
+  updateAutoStartCountdown();
+};
+
+const updateDetectionMessage = () => {
+  if (!cameraReady.value) {
+    lastDetectionMessage.value = 'รอเชื่อมต่อกล้อง';
+    return;
+  }
+  if (leftHandDetected.value && rightHandDetected.value && poseDetected.value) {
+    lastDetectionMessage.value = 'จับจุดมือและสรีระสำเร็จ';
+    return;
+  }
+  if (handDetected.value || poseDetected.value) {
+    lastDetectionMessage.value = 'จับจุดได้บางส่วน กรุณาจัดมือ แขน และลำตัวให้อยู่ในกรอบ';
+    return;
+  }
+  lastDetectionMessage.value = 'กำลังสแกนมือ แขน และลำตัว';
+};
+
+const startGame = () => {
+  cancelAutoStartCountdown();
+  gameState.value = 'playing';
+  timeLeft.value = 60;
+  sessionLogs.value = [];
+  rollingOutcomes.value = [];
+  activeTarget.value = null;
+  lastResolvedTarget = null;
+  particles.value = [];
+  stateMachineState.value = 'resting';
+  
+  currentTargetSpeed.value = BASE_SPEED;
+  currentSpawnInterval.value = BASE_SPAWN_INTERVAL;
+  startSessionRecording();
+
+  // Game Duration Timer (60s)
+  gameTimerId = setInterval(() => {
+    timeLeft.value--;
+    if (timeLeft.value <= 0) {
+      endSession();
+    }
+  }, 1000);
+
+  // Difficulty scaling check: every 5 seconds
+  difficultyScalerIntervalId = setInterval(runDifficultyScaling, 5000);
+
+  scheduleNextTarget();
+};
+
+const runDifficultyScaling = () => {
+  const now = Date.now();
+  const recent = rollingOutcomes.value.filter(o => now - o.timestamp <= 5000);
+  
+  if (recent.length === 0) return;
+
+  const hits = recent.filter(o => o.hit).length;
+  const rate = hits / recent.length;
+
+  if (rate > 0.8) {
+    // Increase difficulty by 10%
+    currentTargetSpeed.value = Math.min(8.0, currentTargetSpeed.value * 1.1);
+    currentSpawnInterval.value = Math.max(1500, currentSpawnInterval.value * 0.9);
+  } else if (rate < 0.4) {
+    // Decrease difficulty by 10%
+    currentTargetSpeed.value = Math.max(2.0, currentTargetSpeed.value * 0.9);
+    currentSpawnInterval.value = Math.min(5000, currentSpawnInterval.value * 1.1);
+  }
+};
+
+const scheduleNextTarget = () => {
+  if (gameState.value !== 'playing') return;
+  if (targetSpawnTimerId) clearTimeout(targetSpawnTimerId);
+  
+  const jitter = Math.random() * 1000 - 500;
+  const delay = Math.max(1000, currentSpawnInterval.value + jitter);
+  targetSpawnTimerId = setTimeout(() => {
+    targetSpawnTimerId = null;
+    spawnTarget();
+  }, delay);
+};
+
+const spawnTarget = () => {
+  if (gameState.value !== 'playing' || activeTarget.value) return;
+
+  const requiredHand = gameMode.value === 'forced' ? patientForm.affectedSide : 'any';
+  const side = requiredHand === 'any' ? (Math.random() > 0.5 ? 'left' : 'right') : requiredHand;
+  const spawnY = Math.random() * (CANVAS_HEIGHT - 220) + 80;
+  
+  const { colorName, shape, isCorrectTarget } = createTargetCognitiveProperties();
+
+  activeTarget.value = {
+    x: side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius,
+    y: spawnY,
+    vx: side === 'left' ? currentTargetSpeed.value : -currentTargetSpeed.value,
+    vy: 0,
+    side,
+    spawnTime: Date.now(),
+    requiredHand,
+    shape,
+    color: colorName,
+    isCorrectTarget,
+    outcome: null
+  };
+
+  const currentResting = isLeftFingerInRestZone.value && isRightFingerInRestZone.value;
+  stateMachineState.value = currentResting ? 'resting' : 'moving';
+};
+
+// Canvas animation loop
+const startCanvasLoop = () => {
+  const ctx = canvasElement.value.getContext('2d');
+  
+  const draw = async (timestamp) => {
+    if (gameState.value === 'setup' || !canvasElement.value) return;
+
+    // Dark-mode background
+    ctx.fillStyle = '#0b0f19';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    // 1. Draw webcam feed mirrored. Keep calibration bright so users can verify camera framing.
+    if (videoElement.value && (videoElement.value.readyState >= 2 || videoElement.value.videoWidth > 0)) {
+      const now = Date.now();
+      if (!isProcessingFrame && (now - lastModelProcessTime > 50) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
+        isProcessingFrame = true;
+        lastModelProcessTime = now;
+        Promise.all([
+          handsInstance.send({ image: videoElement.value }),
+          poseInstance.send({ image: videoElement.value })
+        ]).then(() => {
+          processedFrameCount.value += 1;
+          modelError.value = '';
+        }).catch(error => {
+          console.error('MediaPipe frame processing failed:', error);
+          modelError.value = 'โมเดลประมวลผลภาพล้มเหลว กรุณาลองรีเฟรชหรือเช็กอินเทอร์เน็ต';
+        }).finally(() => {
+          isProcessingFrame = false;
+        });
+      }
+
+      ctx.save();
+      ctx.translate(CANVAS_WIDTH, 0);
+      ctx.scale(-1, 1);
+      ctx.globalAlpha = gameState.value === 'calibrating' ? 0.82 : 0.35;
+      ctx.drawImage(videoElement.value, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.restore();
+
+      if (gameState.value === 'calibrating') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.roundRect(16, 16, 190, 34, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#34d399';
+        ctx.font = "bold 13px 'Inter', sans-serif";
+        ctx.textAlign = 'left';
+        ctx.fillText('กล้องเชื่อมต่อแล้ว', 32, 38);
+        ctx.restore();
+      }
+    }
+
+    // 2. Draw full-body pose landmarks and skeleton
+    drawPoseSkeleton(ctx);
+    drawHandSkeletons(ctx);
+    drawPrivacyEyeMask(ctx);
+
+    if (gameState.value === 'calibrating') {
+      ctx.save();
+      const statusColor = leftHandDetected.value && rightHandDetected.value && poseDetected.value ? '#34d399' : '#fbbf24';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+      ctx.strokeStyle = leftHandDetected.value && rightHandDetected.value && poseDetected.value ? 'rgba(52, 211, 153, 0.55)' : 'rgba(251, 191, 36, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.roundRect(16, 58, 360, 42, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = statusColor;
+      ctx.font = "bold 13px 'Inter', sans-serif";
+      ctx.textAlign = 'left';
+      ctx.fillText(lastDetectionMessage.value, 32, 84);
+      if (modelError.value) {
+        ctx.fillStyle = '#fb7185';
+        ctx.fillText(modelError.value, 32, 104);
+      }
+      ctx.restore();
+    }
+
+    if (poseDetected.value) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.roundRect(CANVAS_WIDTH - 222, 16, 206, 34, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#bae6fd';
+      ctx.font = "bold 13px 'Inter', sans-serif";
+      ctx.textAlign = 'left';
+      ctx.fillText(`ท่าทาง: ${postureStatus.value}`, CANVAS_WIDTH - 206, 38);
+      ctx.restore();
+    }
+
+    // 3. Draw Left & Right Rest Zones
+    ctx.save();
+    ctx.shadowBlur = 15;
+    
+    // Left Zone
+    if (isLeftFingerInRestZone.value) {
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.9)';
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+      ctx.shadowColor = 'rgba(16, 185, 129, 0.4)';
+    } else {
+      ctx.strokeStyle = 'rgba(13, 148, 136, 0.6)';
+      ctx.fillStyle = 'rgba(13, 148, 136, 0.05)';
+      ctx.shadowColor = 'rgba(13, 148, 136, 0.2)';
+    }
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(leftRestZone.x, leftRestZone.y, leftRestZone.width, leftRestZone.height, 12);
+    ctx.stroke();
+    ctx.fill();
+
+    // Right Zone
+    if (isRightFingerInRestZone.value) {
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.9)';
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+      ctx.shadowColor = 'rgba(16, 185, 129, 0.4)';
+    } else {
+      ctx.strokeStyle = 'rgba(13, 148, 136, 0.6)';
+      ctx.fillStyle = 'rgba(13, 148, 136, 0.05)';
+      ctx.shadowColor = 'rgba(13, 148, 136, 0.2)';
+    }
+    ctx.beginPath();
+    ctx.roundRect(rightRestZone.x, rightRestZone.y, rightRestZone.width, rightRestZone.height, 12);
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+
+    // Rest Zone Labels
+    ctx.font = "bold 14px 'Outfit', sans-serif";
+    ctx.textAlign = 'center';
+    
+    ctx.fillStyle = isLeftFingerInRestZone.value ? '#34d399' : '#2dd4bf';
+    ctx.fillText("โซนพักมือซ้าย", leftRestZone.x + leftRestZone.width / 2, leftRestZone.y + leftRestZone.height / 2 + 5);
+    
+    ctx.fillStyle = isRightFingerInRestZone.value ? '#34d399' : '#2dd4bf';
+    ctx.fillText("โซนพักมือขวา", rightRestZone.x + rightRestZone.width / 2, rightRestZone.y + rightRestZone.height / 2 + 5);
+
+    // 4. Update & Draw Target
+    let detectedHandHit = 'none';
+    if (activeTarget.value) {
+      const target = activeTarget.value;
+      target.x += target.vx;
+
+      // Draw Target (Circle or Square)
+      ctx.save();
+      ctx.shadowBlur = 20;
+      
+      const neonColor = target.color === 'red' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(59, 130, 246, 0.9)';
+      ctx.shadowColor = neonColor;
+      ctx.fillStyle = target.color === 'red' ? '#ef4444' : '#3b82f6';
+      ctx.strokeStyle = target.isCorrectTarget ? '#f8fafc' : 'rgba(248, 250, 252, 0.35)';
+      ctx.lineWidth = target.isCorrectTarget ? 4 : 2;
+      
+      ctx.beginPath();
+      if (target.shape === 'circle') {
+        ctx.arc(target.x, target.y, targetRadius, 0, Math.PI * 2);
+      } else {
+        ctx.rect(target.x - targetRadius, target.y - targetRadius, targetRadius * 2, targetRadius * 2);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = "bold 15px 'Outfit', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(target.color === 'red' ? 'แดง' : 'น้ำเงิน', target.x, target.y);
+      ctx.restore();
+
+      // Check collision with BOTH fingers
+      ['left', 'right'].forEach(hand => {
+        const finger = hand === 'left' ? leftFingerCoords : rightFingerCoords;
+        const detected = hand === 'left' ? leftHandDetected.value : rightHandDetected.value;
+        
+        if (detected) {
+          const dx = finger.x - target.x;
+          const dy = finger.y - target.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist <= targetRadius + fingerIndicatorRadius) {
+            detectedHandHit = hand;
+          }
+        }
+      });
+
+      if (detectedHandHit !== 'none') {
+        const usedRequiredHand = target.requiredHand === 'any' || detectedHandHit === target.requiredHand;
+        const isValidHit = target.isCorrectTarget && usedRequiredHand;
+        stateMachineState.value = 'hit';
+        target.outcome = 'hit';
+        target.usedHand = detectedHandHit;
+        lastResolvedTarget = { ...target };
+
+        if (isValidHit) {
+          const colorHex = target.color === 'red' ? '#f87171' : '#60a5fa';
+          triggerParticleBurst(target.x, target.y, colorHex);
+        }
+
+        // Track rolling outcomes for adaptive scaling
+        rollingOutcomes.value.push({ timestamp: Date.now(), hit: isValidHit });
+
+        activeTarget.value = null;
+        scheduleNextTarget();
+      } else if ((target.vx > 0 && target.x > CANVAS_WIDTH + targetRadius) ||
+                 (target.vx < 0 && target.x < -targetRadius)) {
+        stateMachineState.value = 'miss';
+        target.outcome = 'miss';
+        target.usedHand = 'none';
+        lastResolvedTarget = { ...target };
+
+        // Missed correct target counts negatively for rolling scale
+        if (target.isCorrectTarget) {
+          rollingOutcomes.value.push({ timestamp: Date.now(), hit: false });
+        }
+
+        activeTarget.value = null;
+        scheduleNextTarget();
+      }
+    }
+
+    // 5. Update & Draw Particles
+    for (let i = particles.value.length - 1; i >= 0; i--) {
+      const p = particles.value[i];
+      p.update();
+      if (p.alpha <= 0) {
+        particles.value.splice(i, 1);
+      } else {
+        p.draw(ctx);
+      }
+    }
+
+    // 6. Draw Index Finger Position Cursors
+    if (leftHandDetected.value) {
+      ctx.save();
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = 'rgba(99, 102, 241, 0.7)'; // Indigo Left
+      ctx.fillStyle = '#818cf8';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(leftFingerCoords.x, leftFingerCoords.y, fingerIndicatorRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (rightHandDetected.value) {
+      ctx.save();
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = 'rgba(167, 139, 250, 0.7)'; // Purple Right
+      ctx.fillStyle = '#c084fc';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(rightFingerCoords.x, rightFingerCoords.y, fingerIndicatorRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 7. State Machine Transition & Data Logging (30Hz Telemetry)
+    if (gameState.value === 'playing') {
+      const now = Date.now();
+      const currentResting = isLeftFingerInRestZone.value && isRightFingerInRestZone.value;
+      
+      if (lastResolvedTarget) {
+        stateMachineState.value = lastResolvedTarget.outcome;
+      } else if (activeTarget.value) {
+        if (currentResting) {
+          stateMachineState.value = 'resting';
+        } else {
+          if (stateMachineState.value === 'resting') {
+            stateMachineState.value = 'moving';
+          }
+        }
+      } else {
+        stateMachineState.value = currentResting ? 'resting' : 'moving';
+      }
+
+      if (now - lastLogTime >= LOG_INTERVAL_MS) {
+        const logTarget = activeTarget.value || lastResolvedTarget;
+        sessionLogs.value.push({
+          timestamp: now,
+          targetX: logTarget ? Math.round(logTarget.x) : 0,
+          targetY: logTarget ? Math.round(logTarget.y) : 0,
+          targetShape: logTarget ? logTarget.shape : 'none',
+          targetColor: logTarget ? logTarget.color : 'none',
+          isCorrectTarget: logTarget ? logTarget.isCorrectTarget : true,
+          requiredHand: logTarget ? logTarget.requiredHand : 'any',
+          leftFingerX: leftHandDetected.value ? Math.round(leftFingerCoords.x) : 0,
+          leftFingerY: leftHandDetected.value ? Math.round(leftFingerCoords.y) : 0,
+          rightFingerX: rightHandDetected.value ? Math.round(rightFingerCoords.x) : 0,
+          rightFingerY: rightHandDetected.value ? Math.round(rightFingerCoords.y) : 0,
+          usedHand: detectedHandHit !== 'none' ? detectedHandHit : 'none',
+          postureStatus: postureStatus.value,
+          state: stateMachineState.value
+        });
+        
+        lastLogTime = now;
+        if (!activeTarget.value && lastResolvedTarget) {
+          lastResolvedTarget = null;
+        }
+      }
+    }
+
+    animationFrameId = requestAnimationFrame(draw);
+  };
+
+  animationFrameId = requestAnimationFrame(draw);
+};
+
+const abortSession = () => {
+  stopSessionRecording();
+  stopAllTimers();
+  stopCameraStream();
+  gameState.value = 'setup';
+  sessionLogs.value = [];
+  activeTarget.value = null;
+  lastResolvedTarget = null;
+  runtimeError.value = '';
+  autoStartCountdown.value = 0;
+  modelError.value = '';
+  processedFrameCount.value = 0;
+  cameraReady.value = false;
+  poseLandmarks.value = [];
+  poseDetected.value = false;
+  visiblePoseLandmarkCount.value = 0;
+  postureStatus.value = 'รอตรวจจับท่าทาง';
+};
+
+const stopAllTimers = () => {
+  if (gameTimerId) clearInterval(gameTimerId);
+  if (targetSpawnTimerId) clearTimeout(targetSpawnTimerId);
+  if (difficultyScalerIntervalId) clearInterval(difficultyScalerIntervalId);
+  if (autoStartTimerId) clearInterval(autoStartTimerId);
+  if (animationFrameId) cancelAnimationFrame(animationFrameId);
+  autoStartTimerId = null;
+  isProcessingFrame = false;
+};
+
+const stopCameraStream = () => {
+  if (cameraHelper) {
+    try {
+      cameraHelper.stop();
+    } catch (e) {}
+    cameraHelper = null;
+  }
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream = null;
+  }
+  if (videoElement.value) {
+    videoElement.value.srcObject = null;
+  }
+  cameraReady.value = false;
+};
+
+const endSession = async () => {
+  stopSessionRecording();
+  stopAllTimers();
+  gameState.value = 'submitting';
+
+  stopCameraStream();
+
+  // Calculate session metrics using MedicalAssessmentEngine
+  const analysis = MedicalAssessmentEngine.analyze(sessionLogs.value, {
+    affectedSide: patientForm.affectedSide
+  });
+
+  const payload = {
+    sessionId: `SESS-${Date.now()}`,
+    patientId: patientForm.patientId,
+    date: new Date().toISOString(),
+    gameMode: gameMode.value,
+    metrics: {
+      overallSpeedScore: analysis.overallSpeedScore,
+      overallAccuracyScore: analysis.overallAccuracyScore,
+      overallQualityScore: analysis.overallQualityScore,
+      overallCognitiveScore: analysis.overallCognitiveScore,
+      
+      leftHandSpeed: analysis.leftHand.speed,
+      leftHandAccuracy: analysis.leftHand.accuracy,
+      leftHandQuality: analysis.leftHand.quality,
+      
+      rightHandSpeed: analysis.rightHand.speed,
+      rightHandAccuracy: analysis.rightHand.accuracy,
+      rightHandQuality: analysis.rightHand.quality,
+      
+      limbSelectionRatio: analysis.limbSelectionRatio,
+      leftDominanceScore: analysis.leftDominanceScore,
+      rightDominanceScore: analysis.rightDominanceScore,
+      predictedDominantHand: analysis.predictedDominantHand,
+      learnedNonUseRisk: analysis.learnedNonUseRisk
+    },
+    rawLogs: sessionLogs.value
+  };
+
+  try {
+    await axios.post(`${API_URL}/api/patients`, patientForm);
+    const res = await axios.post(`${API_URL}/api/sessions`, payload);
+    
+    if (res.data.session.alertTriggered) {
+      alert(`⚠️ มีการส่งแจ้งเตือนทางคลินิก:\nตรวจพบแนวโน้มที่คุณภาพการเคลื่อนไหวของมือข้างที่อ่อนแรง (${patientForm.affectedSide === 'left' ? 'ซีกซ้าย' : 'ซีกขวา'}) ของผู้ป่วยลดลงอย่างต่อเนื่อง ระบบได้ส่งอีเมลแจ้งเตือนไปยังนักกายภาพบำบัดที่ ${patientForm.therapistEmail} เรียบร้อยแล้ว`);
+    }
+
+    emit('session-saved', res.data.session);
+    gameState.value = 'setup';
+  } catch (error) {
+    console.error('Failed to submit session data:', error);
+    alert('การประเมินเสร็จสิ้น แต่ไม่สามารถบันทึกข้อมูลเข้าสู่เซิร์ฟเวอร์ได้ กำลังแสดงผลลัพธ์ในเครื่อง');
+    
+    emit('session-saved', {
+      sessionId: payload.sessionId,
+      patientId: payload.patientId,
+      date: payload.date,
+      metrics: payload.metrics,
+      calculatedMetrics: analysis.detailedMetrics
+    });
+    gameState.value = 'setup';
+  }
+};
+
+onUnmounted(() => {
+  stopAllTimers();
+  stopCameraStream();
+  if (handsInstance) {
+    try {
+      handsInstance.close();
+    } catch (e) {}
+  }
+  if (poseInstance) {
+    try {
+      poseInstance.close();
+    } catch (e) {}
+  }
+});
+</script>
+
+<style scoped>
+.rit-game-container {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+  gap: 20px;
+  width: 100%;
+}
+
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 16px;
+}
+
+.header-info h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  background: linear-gradient(135deg, #2dd4bf 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  margin: 4px 0 0 0;
+  font-size: 0.9rem;
+  color: hsl(var(--text-muted));
+}
+
+.game-timer {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 16px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timer-value {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: hsl(var(--accent-teal));
+}
+
+.timer-low .timer-value {
+  color: hsl(var(--accent-rose));
+  animation: pulse 1s infinite alternate;
+}
+
+/* Setup Screen styling */
+.setup-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.instructions-card {
+  padding: 32px;
+  max-width: 550px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: hsl(var(--text-muted));
+}
+
+.patient-input-row {
+  display: flex;
+  gap: 12px;
+}
+
+.radio-group {
+  display: flex;
+  gap: 16px;
+}
+
+.radio-label {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  user-select: none;
+}
+
+.radio-label input {
+  display: none;
+}
+
+.radio-label.active {
+  background: rgba(13, 148, 136, 0.15);
+  border-color: hsl(var(--accent-teal));
+  color: #fff;
+}
+
+/* Arena Layout */
+.arena-wrapper {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 20px;
+}
+
+.canvas-container {
+  position: relative;
+  width: 800px;
+  height: 500px;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+}
+
+.game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hidden-video {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Overlays on Canvas */
+.canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(11, 15, 25, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+  text-align: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.canvas-overlay h3 {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.canvas-overlay p {
+  color: hsl(var(--text-muted));
+  max-width: 450px;
+  margin: 6px 0;
+}
+
+.highlight {
+  color: #34d399 !important;
+  font-weight: 600;
+  margin-top: 16px !important;
+}
+
+.countdown-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.countdown-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px;
+  height: 92px;
+  border: 2px solid rgba(52, 211, 153, 0.75);
+  border-radius: 50%;
+  color: #34d399;
+  font-family: 'Outfit', sans-serif;
+  font-size: 3.5rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 24px rgba(52, 211, 153, 0.25);
+}
+
+.warning {
+  color: #fb7185 !important;
+  font-weight: 600;
+  margin-top: 16px !important;
+}
+
+.calibration-overlay {
+  background: linear-gradient(180deg, rgba(11, 15, 25, 0.42) 0%, rgba(11, 15, 25, 0.12) 48%, rgba(11, 15, 25, 0.02) 100%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  justify-content: flex-start;
+  padding-top: 40px;
+}
+
+.calibration-overlay h3,
+.calibration-overlay p,
+.calibration-overlay .countdown-panel {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+/* Telemetry Sidebar */
+.telemetry-sidebar {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.telemetry-sidebar h4 {
+  margin: 0 0 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+  font-size: 1.1rem;
+}
+
+.telemetry-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.telemetry-stat .label {
+  font-size: 0.8rem;
+  color: hsl(var(--text-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.telemetry-stat .value {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.accent {
+  color: hsl(var(--accent-violet));
+}
+
+.accent-rule {
+  color: #c084fc;
+  font-weight: 700;
+}
+
+.accent-teal {
+  color: hsl(var(--accent-teal));
+}
+
+.highlight-state {
+  color: hsl(var(--accent-teal));
+  font-family: monospace;
+}
+
+.text-success {
+  color: #34d399;
+}
+
+.text-danger {
+  color: #fb7185;
+}
+
+.progress-bar-container {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: auto;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, hsl(var(--accent-teal)), hsl(var(--accent-violet)));
+  transition: width 1s linear;
+}
+
+.abort-btn {
+  margin-top: 12px;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.abort-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+
+
+/* Animations */
+@keyframes floatRobot {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes blinkEyes {
+  0%, 90%, 100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes talkMouth {
+  0%, 100% {
+    transform: scaleX(1) scaleY(1);
+  }
+  50% {
+    transform: scaleX(1.3) scaleY(0.6);
+  }
+}
+
+@keyframes glowDot {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes pulseAvatar {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.4;
+  }
+  70% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>

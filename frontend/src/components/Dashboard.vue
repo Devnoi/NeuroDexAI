@@ -1,0 +1,679 @@
+<template>
+  <div class="dashboard-container glass-panel">
+    <div class="dashboard-header">
+      <div>
+        <h2>การวิเคราะห์และประเมินความก้าวหน้าผู้ป่วย</h2>
+        <p class="subtitle">แดชบอร์ดข้อมูลทางคลินิกแสดงแนวโน้มจลนศาสตร์เปรียบเทียบประสิทธิภาพ มือซ้าย vs มือขวา</p>
+      </div>
+      <div class="patient-selector-container">
+        <label for="patient-filter">เลือกผู้ป่วย:</label>
+        <select id="patient-filter" v-model="selectedPatientId" class="form-input select-input" @change="fetchPatientData">
+          <option value="">-- ผู้ป่วยทั้งหมด --</option>
+          <option v-for="patient in patients" :key="patient.patientId" :value="patient.patientId">
+            {{ patient.name }} ({{ patient.patientId }}) - ข้างที่อ่อนแรง: {{ patient.affectedSide === 'left' ? 'ซ้าย' : 'ขวา' }}
+          </option>
+        </select>
+      </div>
+    </div>
+
+    <div v-if="dashboardError" class="dashboard-error glass-panel">
+      {{ dashboardError }}
+    </div>
+
+    <!-- Alert / Deterioration Banner -->
+    <div v-if="clinicalAlert" class="clinical-alert-banner glass-panel">
+      <div class="alert-header">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <h3>⚠️ คำเตือนทางคลินิก: ตรวจพบคุณภาพการเคลื่อนไหวลดลงอย่างต่อเนื่อง</h3>
+      </div>
+      <p>
+        ระบบประมวลผลทางคลินิกตรวจพบว่า คุณภาพการเคลื่อนไหวของมือข้างอ่อนแรง (ซีก<strong>{{ clinicalAlert.affectedSide === 'left' ? 'ซ้าย' : 'ขวา' }}</strong>) ของผู้ป่วยรายนี้ลดลงอย่างต่อเนื่องใน 3 เซสชันการทดสอบล่าสุด
+      </p>
+      <p class="alert-details">
+        คะแนนคุณภาพตามลำดับเวลา: {{ clinicalAlert.scores.join('% → ') }}% (ล่าสุด) ส่งอีเมลรายงานประเมินไปยังนักกายภาพบำบัดแล้วที่ {{ clinicalAlert.email }}
+      </p>
+    </div>
+
+    <!-- Empty State -->
+    <div v-if="sessions.length === 0" class="empty-state">
+      <p>ยังไม่พบประวัติเซสชันการประเมิน กรุณาบันทึกประเมินผลการทดสอบ RIT ให้สำเร็จเพื่อคำนวณสถิติ</p>
+    </div>
+
+    <!-- Active Dashboard -->
+    <div v-else class="dashboard-grid">
+      
+      <!-- side-by-side stats -->
+      <div class="comparison-cards">
+        <div class="hand-card glass-panel prediction-card">
+          <h3>ผลทำนายความถนัด</h3>
+          <div class="selection-value">
+            <span class="percent">{{ formatDominantHand(predictedDominantHand) }}</span>
+            <span class="desc">จาก Speed, Accuracy, Quality และพฤติกรรมการเลือกใช้มือ</span>
+          </div>
+          <div class="metric-row">
+            <span class="label">คะแนนมือซ้าย</span>
+            <span class="value">{{ avgLeftDominance }}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="label">คะแนนมือขวา</span>
+            <span class="value">{{ avgRightDominance }}%</span>
+          </div>
+        </div>
+
+        <div class="hand-card glass-panel risk-card" :class="`risk-${learnedNonUseRisk}`">
+          <h3>ความเสี่ยง Learned Non-Use</h3>
+          <div class="selection-value">
+            <span class="percent">{{ formatRisk(learnedNonUseRisk) }}</span>
+            <span class="desc">ดูจากความสามารถของแขนข้างอ่อนแรงเทียบกับความถี่ที่ถูกเลือกใช้จริง</span>
+          </div>
+          <p class="explanation">
+            ถ้าแขนข้างอ่อนแรงยังทำงานได้พอสมควร แต่ผู้ใช้เลือกใช้น้อยมาก ระบบจะตีความว่าอาจมีการเลี่ยงใช้หรือ "ลืมใช้" แขนข้างนั้น
+          </p>
+        </div>
+
+        <!-- Left Hand -->
+        <div class="hand-card glass-panel left-hand">
+          <h3>ประสิทธิภาพ มือซ้าย</h3>
+          <div class="metric-row">
+            <span class="label">คะแนนความเร็ว (Speed)</span>
+            <span class="value">{{ leftSpeed }}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="label">คะแนนความแม่นยำ (Accuracy)</span>
+            <span class="value">{{ leftAccuracy }}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="label">คะแนนคุณภาพ (Quality)</span>
+            <span class="value">{{ leftQuality }}%</span>
+          </div>
+        </div>
+
+        <!-- Right Hand -->
+        <div class="hand-card glass-panel right-hand">
+          <h3>ประสิทธิภาพ มือขวา</h3>
+          <div class="metric-row">
+            <span class="label">คะแนนความเร็ว (Speed)</span>
+            <span class="value">{{ rightSpeed }}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="label">คะแนนความแม่นยำ (Accuracy)</span>
+            <span class="value">{{ rightAccuracy }}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="label">คะแนนคุณภาพ (Quality)</span>
+            <span class="value">{{ rightQuality }}%</span>
+          </div>
+        </div>
+
+        <!-- Limb Selection Ratio (Learned Non-Use indicator) -->
+        <div class="hand-card glass-panel limb-selection">
+          <h3>การเลือกใช้งานมือ</h3>
+          <div class="selection-value">
+            <span class="percent">{{ avgLimbSelection }}%</span>
+            <span class="desc">อัตราการเลือกใช้มือข้างอ่อนแรงในโหมดสุ่ม</span>
+          </div>
+          <p class="explanation">
+            หากสัดส่วนการเอื้อมสกัดกั้นเป้าหมายด้วยมือข้างที่อ่อนแรงต่ำ แสดงให้เห็นว่าผู้ป่วยเลี่ยงการเคลื่อนไหวมือที่มีปัญหา (Learned Non-Use) ในชีวิตประจำวัน
+          </p>
+        </div>
+
+        <!-- Cognitive Score -->
+        <div class="hand-card glass-panel cognitive-score">
+          <h3>คะแนนการรู้คิดและคัดกรอง</h3>
+          <div class="selection-value">
+            <span class="percent">{{ avgCognitiveScore }}%</span>
+            <span class="desc">ความถูกต้องเชิงตรรกะและการกรองเป้าหมาย</span>
+          </div>
+          <p class="explanation">
+            คะแนนสะท้อนความแม่นยำในการเลือกสกัดกั้นวัตถุเป้าหมายตามกฎ (Cognitive Filtering) โดยหักคะแนนเมื่อสกัดกั้นเป้าหมายผิดกฎ (Commission) หรือละเลยเป้าหมายที่ถูกกฎ (Omission)
+          </p>
+        </div>
+      </div>
+
+      <!-- Kinematics Trends Chart -->
+      <div class="chart-section glass-panel">
+        <h3>แนวโน้มคุณภาพการเคลื่อนไหว (มือซ้าย vs มือขวา)</h3>
+        <p class="chart-subtitle">การวิเคราะห์คะแนนคุณภาพการเคลื่อนไหวตามช่วงเวลา ระบบจะแสดงคำเตือนทางคลินิกเมื่อพบแนวโน้มที่คะแนนลดลงอย่างต่อเนื่อง</p>
+        <div class="chart-wrapper">
+          <canvas ref="chartCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- History Table -->
+      <div class="history-section glass-panel">
+        <h3>ประวัติบันทึกเซสชัน</h3>
+        <div class="table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>วัน / เวลา</th>
+                <th>รหัสเซสชัน</th>
+                <th>รหัสผู้ป่วย</th>
+                <th>โหมดการทดสอบ</th>
+                <th>มือซ้าย (เร็ว/แม่น/คุณภาพ)</th>
+                <th>มือขวา (เร็ว/แม่น/คุณภาพ)</th>
+                <th>การเลือกใช้มือข้างอ่อนแรง</th>
+                <th>ผลทำนาย</th>
+                <th>Learned Non-Use</th>
+                <th>คะแนนการรู้คิด</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="sess in sessions" :key="sess.sessionId">
+                <td>{{ formatDate(sess.date) }}</td>
+                <td class="font-mono text-xs">{{ sess.sessionId }}</td>
+                <td>{{ sess.patientId }}</td>
+                <td><span class="badge mode-badge">{{ sess.gameMode === 'random' ? 'โหมดสุ่ม' : 'โหมดบังคับ' }}</span></td>
+                <td>
+                  <span class="badge speed-badge">{{ sess.metrics.leftHandSpeed }}%</span>
+                  <span class="badge accuracy-badge">{{ sess.metrics.leftHandAccuracy }}%</span>
+                  <span class="badge quality-badge">{{ sess.metrics.leftHandQuality }}%</span>
+                </td>
+                <td>
+                  <span class="badge speed-badge">{{ sess.metrics.rightHandSpeed }}%</span>
+                  <span class="badge accuracy-badge">{{ sess.metrics.rightHandAccuracy }}%</span>
+                  <span class="badge quality-badge">{{ sess.metrics.rightHandQuality }}%</span>
+                </td>
+                <td class="score-cell">{{ sess.metrics.limbSelectionRatio }}%</td>
+                <td>{{ formatDominantHand(sess.metrics.predictedDominantHand || 'undetermined') }}</td>
+                <td><span class="badge risk-badge">{{ formatRisk(sess.metrics.learnedNonUseRisk || 'undetermined') }}</span></td>
+                <td>
+                  <span class="badge cognitive-badge">{{ sess.metrics.overallCognitiveScore !== undefined ? sess.metrics.overallCognitiveScore : 100 }}%</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue';
+import axios from 'axios';
+import { Chart, registerables } from 'chart.js';
+
+Chart.register(...registerables);
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
+const patients = ref([]);
+const sessions = ref([]);
+const selectedPatientId = ref('');
+const chartCanvas = ref(null);
+let chartInstance = null;
+
+const clinicalAlert = ref(null);
+const dashboardError = ref('');
+
+// Left Hand stats averages
+const leftSpeed = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.leftHandSpeed || 0), 0) / sessions.value.length);
+});
+const leftAccuracy = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.leftHandAccuracy || 0), 0) / sessions.value.length);
+});
+const leftQuality = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.leftHandQuality || 0), 0) / sessions.value.length);
+});
+
+// Right Hand stats averages
+const rightSpeed = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.rightHandSpeed || 0), 0) / sessions.value.length);
+});
+const rightAccuracy = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.rightHandAccuracy || 0), 0) / sessions.value.length);
+});
+const rightQuality = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.rightHandQuality || 0), 0) / sessions.value.length);
+});
+
+const avgLimbSelection = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.limbSelectionRatio || 0), 0) / sessions.value.length);
+});
+
+const avgCognitiveScore = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.overallCognitiveScore !== undefined ? s.metrics.overallCognitiveScore : 100), 0) / sessions.value.length);
+});
+
+const avgLeftDominance = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.leftDominanceScore || 0), 0) / sessions.value.length);
+});
+
+const avgRightDominance = computed(() => {
+  if (sessions.value.length === 0) return 0;
+  return Math.round(sessions.value.reduce((acc, s) => acc + (s.metrics?.rightDominanceScore || 0), 0) / sessions.value.length);
+});
+
+const predictedDominantHand = computed(() => {
+  if (avgLeftDominance.value === 0 && avgRightDominance.value === 0) return 'undetermined';
+  const gap = Math.abs(avgLeftDominance.value - avgRightDominance.value);
+  if (gap < 8) return 'balanced';
+  return avgLeftDominance.value > avgRightDominance.value ? 'left' : 'right';
+});
+
+const learnedNonUseRisk = computed(() => {
+  const riskRank = { high: 3, moderate: 2, low: 1, undetermined: 0 };
+  const highest = sessions.value.reduce((current, session) => {
+    const risk = session.metrics?.learnedNonUseRisk || 'undetermined';
+    return riskRank[risk] > riskRank[current] ? risk : current;
+  }, 'undetermined');
+  return highest;
+});
+
+const formatDominantHand = (hand) => {
+  if (hand === 'left') return 'มือซ้าย';
+  if (hand === 'right') return 'มือขวา';
+  if (hand === 'balanced') return 'ใกล้เคียงกัน';
+  return 'ยังไม่พอประเมิน';
+};
+
+const formatRisk = (risk) => {
+  if (risk === 'high') return 'สูง';
+  if (risk === 'moderate') return 'ปานกลาง';
+  if (risk === 'low') return 'ต่ำ';
+  return 'ยังไม่พอประเมิน';
+};
+
+// Load patient lists & initial sessions
+const loadInitialData = async () => {
+  try {
+    dashboardError.value = '';
+    const patientsRes = await axios.get(`${API_URL}/api/patients`);
+    patients.value = patientsRes.data;
+
+    const sessionsRes = await axios.get(`${API_URL}/api/sessions`);
+    sessions.value = sessionsRes.data;
+    
+    // Auto-select first patient if available
+    if (patients.value.length > 0) {
+      selectedPatientId.value = patients.value[0].patientId;
+      fetchPatientData();
+    } else {
+      renderChart();
+    }
+  } catch (err) {
+    console.error('Failed to load dashboard data:', err);
+    dashboardError.value = 'ไม่สามารถโหลดข้อมูลแดชบอร์ดจากเซิร์ฟเวอร์ได้ กรุณาตรวจสอบว่า backend กำลังทำงานอยู่';
+    patients.value = [];
+    sessions.value = [];
+    clinicalAlert.value = null;
+    renderChart();
+  }
+};
+
+const fetchPatientData = async () => {
+  try {
+    dashboardError.value = '';
+    let patientSessions = [];
+    if (selectedPatientId.value) {
+      const res = await axios.get(`${API_URL}/api/sessions/patient/${selectedPatientId.value}`);
+      patientSessions = res.data.sort((a, b) => new Date(a.date) - new Date(b.date));
+      sessions.value = patientSessions;
+    } else {
+      const res = await axios.get(`${API_URL}/api/sessions`);
+      patientSessions = res.data.sort((a, b) => new Date(a.date) - new Date(b.date));
+      sessions.value = patientSessions;
+    }
+
+    // Evaluate Quality Deterioration Alert for selected patient
+    clinicalAlert.value = null;
+    const currentPatient = patients.value.find(p => p.patientId === selectedPatientId.value);
+    if (currentPatient && patientSessions.length >= 3) {
+      const side = currentPatient.affectedSide;
+      const qKey = side === 'left' ? 'leftHandQuality' : 'rightHandQuality';
+      const lastThree = patientSessions.slice(-3);
+      
+      const q1 = lastThree[0].metrics[qKey];
+      const q2 = lastThree[1].metrics[qKey];
+      const q3 = lastThree[2].metrics[qKey];
+
+      if (q1 > q2 && q2 > q3) {
+        clinicalAlert.value = {
+          affectedSide: side,
+          scores: [q1, q2, q3],
+          email: currentPatient.therapistEmail || 'therapist@neurodex.com'
+        };
+      }
+    }
+
+    renderChart();
+  } catch (err) {
+    console.error('Error fetching patient records:', err);
+    dashboardError.value = 'ไม่สามารถโหลดประวัติผู้ป่วยรายนี้ได้ กรุณาลองใหม่อีกครั้ง';
+    sessions.value = [];
+    clinicalAlert.value = null;
+    renderChart();
+  }
+};
+
+const formatDate = (isoString) => {
+  const d = new Date(isoString);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// Render progress charts
+const renderChart = () => {
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
+
+  if (!chartCanvas.value || sessions.value.length === 0) return;
+
+  const ctx = chartCanvas.value.getContext('2d');
+  
+  // Format labels & values
+  const labels = sessions.value.map(s => new Date(s.date).toLocaleDateString());
+  const leftQualityData = sessions.value.map(s => s.metrics?.leftHandQuality || 0);
+  const rightQualityData = sessions.value.map(s => s.metrics?.rightHandQuality || 0);
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'คุณภาพการเคลื่อนไหวมือซ้าย (%)',
+          data: leftQualityData,
+          borderColor: 'rgb(129, 140, 248)', // Indigo
+          backgroundColor: 'rgba(129, 140, 248, 0.1)',
+          tension: 0.3,
+          borderWidth: 3
+        },
+        {
+          label: 'คุณภาพการเคลื่อนไหวมือขวา (%)',
+          data: rightQualityData,
+          borderColor: 'rgb(244, 114, 182)', // Pink
+          backgroundColor: 'rgba(244, 114, 182, 0.1)',
+          tension: 0.3,
+          borderWidth: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+          ticks: { color: '#94a3b8' }
+        },
+        y: {
+          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+          ticks: { color: '#94a3b8' },
+          min: 0,
+          max: 100,
+          title: {
+            display: true,
+            text: 'คะแนนคุณภาพ (%)',
+            color: '#94a3b8'
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          labels: { color: '#f8fafc', font: { family: 'Outfit' } }
+        }
+      }
+    }
+  });
+};
+
+onMounted(() => {
+  loadInitialData();
+});
+
+defineExpose({
+  refresh: loadInitialData
+});
+</script>
+
+<style scoped>
+.dashboard-container {
+  padding: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  background: linear-gradient(135deg, #a78bfa 0%, #38bdf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.patient-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.select-input {
+  min-width: 250px;
+}
+
+.clinical-alert-banner {
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+  padding: 16px 24px;
+  border-radius: var(--border-radius-md);
+  margin-bottom: 24px;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.15);
+}
+
+.alert-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f87171;
+  margin-bottom: 8px;
+}
+
+.alert-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.alert-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #f87171;
+}
+
+.alert-details {
+  font-size: 0.85rem;
+  color: #fca5a5;
+  margin-top: 4px;
+}
+
+.dashboard-error {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  padding: 14px 18px;
+  border-radius: var(--border-radius-sm);
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: hsl(var(--text-muted));
+}
+
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.comparison-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.hand-card {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.hand-card h3 {
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+.left-hand h3 { color: #818cf8; }
+.right-hand h3 { color: #f472b6; }
+.limb-selection h3 { color: #34d399; }
+.cognitive-score h3 { color: #f59e0b; }
+.prediction-card h3 { color: #38bdf8; }
+.risk-card h3 { color: #fb7185; }
+.cognitive-score .selection-value .percent { color: #f59e0b; }
+.prediction-card .selection-value .percent { color: #38bdf8; font-size: 2.2rem; }
+.risk-card .selection-value .percent { color: #fb7185; font-size: 2.2rem; }
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.metric-row .label {
+  font-size: 0.85rem;
+  color: hsl(var(--text-muted));
+}
+
+.metric-row .value {
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+.selection-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.selection-value .percent {
+  font-size: 2.8rem;
+  font-weight: 700;
+  color: #34d399;
+  font-family: 'Outfit', sans-serif;
+}
+
+.selection-value .desc {
+  font-size: 0.8rem;
+  color: hsl(var(--text-muted));
+}
+
+.explanation {
+  font-size: 0.75rem;
+  color: hsl(var(--text-muted));
+  line-height: 1.4;
+  margin-top: 12px;
+}
+
+.chart-section {
+  padding: 24px;
+}
+
+.chart-subtitle {
+  font-size: 0.85rem;
+  color: hsl(var(--text-muted));
+  margin: -6px 0 16px 0;
+}
+
+.chart-wrapper {
+  height: 350px;
+  position: relative;
+}
+
+.history-section {
+  padding: 20px;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.history-table th, .history-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.history-table th {
+  font-family: 'Outfit', sans-serif;
+  color: hsl(var(--text-muted));
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  margin-right: 4px;
+}
+
+.mode-badge { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.speed-badge { background: rgba(45, 212, 191, 0.15); color: #2dd4bf; }
+.accuracy-badge { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.quality-badge { background: rgba(129, 140, 248, 0.15); color: #818cf8; }
+.cognitive-badge { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.risk-badge { background: rgba(251, 113, 133, 0.15); color: #fb7185; }
+
+.font-mono {
+  font-family: monospace;
+}
+</style>
