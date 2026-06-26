@@ -326,4 +326,48 @@ const handleSessionSaved = (savedSession) => {
     transform: translateY(0);
   }
 }
+
+@media (max-width: 768px) {
+  .navbar {
+    flex-direction: column;
+    gap: 12px;
+    padding: 10px 20px;
+    margin: 8px 10px;
+  }
+  
+  .nav-tabs {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .nav-tab-btn {
+    flex: 1;
+    text-align: center;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+
+  .welcome-title {
+    font-size: 2.4rem;
+  }
+
+  .welcome-card {
+    padding: 24px;
+  }
+
+  .welcome-subtitle {
+    font-size: 1rem;
+    margin-bottom: 24px;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  
+  .main-content {
+    padding: 0 10px 20px 10px;
+  }
+}
 </style>

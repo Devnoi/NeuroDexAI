@@ -134,7 +134,7 @@
         </div>
 
         <!-- Detailed Kinematics Comparison Card -->
-        <div class="hand-card glass-panel detailed-kinematics-card" style="grid-column: span 2;">
+        <div class="hand-card glass-panel detailed-kinematics-card">
           <h3 style="color: #2dd4bf;">ค่าวัดจลนศาสตร์เชิงฟิสิกส์เฉลี่ย (Physical Kinematics)</h3>
           <div class="kinematics-comparison-grid">
             <div class="kinematics-header-row">
@@ -924,5 +924,18 @@ defineExpose({
 
 .details-column li strong {
   color: #f8fafc;
+}
+
+.detailed-kinematics-card {
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .detailed-kinematics-card {
+    grid-column: span 1;
+  }
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

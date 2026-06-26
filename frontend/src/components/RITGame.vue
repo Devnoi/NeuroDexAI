@@ -1946,10 +1946,18 @@ onUnmounted(() => {
   gap: 20px;
 }
 
+@media (max-width: 1100px) {
+  .arena-wrapper {
+    grid-template-columns: 1fr;
+  }
+}
+
 .canvas-container {
   position: relative;
-  width: 800px;
-  height: 500px;
+  width: 100%;
+  max-width: 800px;
+  aspect-ratio: 800 / 500;
+  height: auto;
   border-radius: var(--border-radius-md);
   overflow: hidden;
 }
@@ -1959,6 +1967,7 @@ onUnmounted(() => {
   height: 100%;
   display: block;
 }
+
 
 .hidden-video {
   position: absolute;
