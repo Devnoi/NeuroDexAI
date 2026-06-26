@@ -106,10 +106,22 @@ export class MedicalAssessmentEngine {
         // Correct target should be hit
         if (finalLog.state === 'hit') {
           if (usedHand !== 'none' && usedRequiredHand) {
-            stats[usedHand].trials++;
-            stats[usedHand].hits++;
+            if (usedHand === 'both') {
+              stats.left.trials++;
+              stats.left.hits++;
+              stats.right.trials++;
+              stats.right.hits++;
+            } else {
+              stats[usedHand].trials++;
+              stats[usedHand].hits++;
+            }
           } else if (usedHand !== 'none') {
-            stats[usedHand].trials++;
+            if (usedHand === 'both') {
+              stats.left.trials++;
+              stats.right.trials++;
+            } else {
+              stats[usedHand].trials++;
+            }
             commissionErrors++;
           }
         } else {
@@ -122,7 +134,12 @@ export class MedicalAssessmentEngine {
           // Hit an incorrect target = commission error
           commissionErrors++;
           if (usedHand !== 'none') {
-            stats[usedHand].trials++;
+            if (usedHand === 'both') {
+              stats.left.trials++;
+              stats.right.trials++;
+            } else {
+              stats[usedHand].trials++;
+            }
           }
         }
       }
@@ -130,7 +147,7 @@ export class MedicalAssessmentEngine {
       // Left hand speed calculations
       if (trial.leftMoveLog) {
         stats.left.RTs.push(trial.leftMoveLog.timestamp - tSpawn);
-        if (usedHand === 'left' && isValidHit) {
+        if ((usedHand === 'left' || usedHand === 'both') && isValidHit) {
           stats.left.MTs.push(finalLog.timestamp - trial.leftMoveLog.timestamp);
         }
       }
@@ -138,20 +155,34 @@ export class MedicalAssessmentEngine {
       // Right hand speed calculations
       if (trial.rightMoveLog) {
         stats.right.RTs.push(trial.rightMoveLog.timestamp - tSpawn);
-        if (usedHand === 'right' && isValidHit) {
+        if ((usedHand === 'right' || usedHand === 'both') && isValidHit) {
           stats.right.MTs.push(finalLog.timestamp - trial.rightMoveLog.timestamp);
         }
       }
 
       // Accuracy Calculations (Euclidean distance on Hit)
       if (isValidHit) {
-        const fingerX = usedHand === 'left' ? finalLog.leftFingerX : finalLog.rightFingerX;
-        const fingerY = usedHand === 'left' ? finalLog.leftFingerY : finalLog.rightFingerY;
-        const dist = Math.sqrt(
-          Math.pow(fingerX - finalLog.targetX, 2) +
-          Math.pow(fingerY - finalLog.targetY, 2)
-        );
-        stats[usedHand].errors.push(dist);
+        if (usedHand === 'both') {
+          const distLeft = Math.sqrt(
+            Math.pow(finalLog.leftFingerX - finalLog.targetX, 2) +
+            Math.pow(finalLog.leftFingerY - finalLog.targetY, 2)
+          );
+          stats.left.errors.push(distLeft);
+
+          const distRight = Math.sqrt(
+            Math.pow(finalLog.rightFingerX - finalLog.targetX, 2) +
+            Math.pow(finalLog.rightFingerY - finalLog.targetY, 2)
+          );
+          stats.right.errors.push(distRight);
+        } else {
+          const fingerX = usedHand === 'left' ? finalLog.leftFingerX : finalLog.rightFingerX;
+          const fingerY = usedHand === 'left' ? finalLog.leftFingerY : finalLog.rightFingerY;
+          const dist = Math.sqrt(
+            Math.pow(fingerX - finalLog.targetX, 2) +
+            Math.pow(fingerY - finalLog.targetY, 2)
+          );
+          stats[usedHand].errors.push(dist);
+        }
       }
 
       // Smoothness calculations

@@ -132,6 +132,43 @@
             คะแนนสะท้อนความแม่นยำในการเลือกสกัดกั้นวัตถุเป้าหมายตามกฎ (Cognitive Filtering) โดยหักคะแนนเมื่อสกัดกั้นเป้าหมายผิดกฎ (Commission) หรือละเลยเป้าหมายที่ถูกกฎ (Omission)
           </p>
         </div>
+
+        <!-- Detailed Kinematics Comparison Card -->
+        <div class="hand-card glass-panel detailed-kinematics-card" style="grid-column: span 2;">
+          <h3 style="color: #2dd4bf;">ค่าวัดจลนศาสตร์เชิงฟิสิกส์เฉลี่ย (Physical Kinematics)</h3>
+          <div class="kinematics-comparison-grid">
+            <div class="kinematics-header-row">
+              <span class="col-title">ตัวชี้วัดจลนศาสตร์</span>
+              <span class="col-title text-indigo">มือซ้าย</span>
+              <span class="col-title text-pink">มือขวา</span>
+            </div>
+            <div class="kinematics-data-row">
+              <span class="label">Reaction Time (เวลาตอบสนองสั่งการ)</span>
+              <span class="value">{{ avgLeftRT }} ms</span>
+              <span class="value">{{ avgRightRT }} ms</span>
+            </div>
+            <div class="kinematics-data-row">
+              <span class="label">Movement Time (เวลาเอื้อมพิกัด)</span>
+              <span class="value">{{ avgLeftMT }} ms</span>
+              <span class="value">{{ avgRightMT }} ms</span>
+            </div>
+            <div class="kinematics-data-row">
+              <span class="label">Endpoint Precision (ความเบี่ยงเบนเป้าหมาย)</span>
+              <span class="value">{{ avgLeftPrecision }} px</span>
+              <span class="value">{{ avgRightPrecision }} px</span>
+            </div>
+            <div class="kinematics-data-row">
+              <span class="label">Resting Jitter (อาการสั่นขณะพัก)</span>
+              <span class="value">{{ avgLeftJitterVal }} px</span>
+              <span class="value">{{ avgRightJitterVal }} px</span>
+            </div>
+            <div class="kinematics-data-row">
+              <span class="label">Path Smoothness (ความราบเรียบของแนวแรง)</span>
+              <span class="value">{{ avgLeftSmoothnessVal }}x</span>
+              <span class="value">{{ avgRightSmoothnessVal }}x</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Kinematics Trends Chart -->
@@ -163,28 +200,65 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="sess in sessions" :key="sess.sessionId">
-                <td>{{ formatDate(sess.date) }}</td>
-                <td class="font-mono text-xs">{{ sess.sessionId }}</td>
-                <td>{{ sess.patientId }}</td>
-                <td><span class="badge mode-badge">{{ sess.gameMode === 'random' ? 'โหมดสุ่ม' : 'โหมดบังคับ' }}</span></td>
-                <td>
-                  <span class="badge speed-badge">{{ sess.metrics.leftHandSpeed }}%</span>
-                  <span class="badge accuracy-badge">{{ sess.metrics.leftHandAccuracy }}%</span>
-                  <span class="badge quality-badge">{{ sess.metrics.leftHandQuality }}%</span>
-                </td>
-                <td>
-                  <span class="badge speed-badge">{{ sess.metrics.rightHandSpeed }}%</span>
-                  <span class="badge accuracy-badge">{{ sess.metrics.rightHandAccuracy }}%</span>
-                  <span class="badge quality-badge">{{ sess.metrics.rightHandQuality }}%</span>
-                </td>
-                <td class="score-cell">{{ sess.metrics.limbSelectionRatio }}%</td>
-                <td>{{ formatDominantHand(sess.metrics.predictedDominantHand || 'undetermined') }}</td>
-                <td><span class="badge risk-badge">{{ formatRisk(sess.metrics.learnedNonUseRisk || 'undetermined') }}</span></td>
-                <td>
-                  <span class="badge cognitive-badge">{{ sess.metrics.overallCognitiveScore !== undefined ? sess.metrics.overallCognitiveScore : 100 }}%</span>
-                </td>
-              </tr>
+              <template v-for="sess in analyzedSessions" :key="sess.sessionId">
+                <tr class="clickable-row" @click="toggleExpandSession(sess.sessionId)" style="cursor: pointer;">
+                  <td>{{ formatDate(sess.date) }}</td>
+                  <td class="font-mono text-xs">{{ sess.sessionId }}</td>
+                  <td>{{ sess.patientId }}</td>
+                  <td>
+                    <span class="badge mode-badge">
+                      {{ sess.gameMode === 'random' ? 'โหมดสุ่ม' : (sess.gameMode === 'forced' ? 'โหมดบังคับ' : (sess.gameMode === 'bilateral' ? 'สองมือ' : (sess.gameMode === 'range_of_motion' ? 'ข้อไหล่' : 'สลับสี'))) }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge speed-badge">{{ sess.metrics.leftHandSpeed }}%</span>
+                    <span class="badge accuracy-badge">{{ sess.metrics.leftHandAccuracy }}%</span>
+                    <span class="badge quality-badge">{{ sess.metrics.leftHandQuality }}%</span>
+                  </td>
+                  <td>
+                    <span class="badge speed-badge">{{ sess.metrics.rightHandSpeed }}%</span>
+                    <span class="badge accuracy-badge">{{ sess.metrics.rightHandAccuracy }}%</span>
+                    <span class="badge quality-badge">{{ sess.metrics.rightHandQuality }}%</span>
+                  </td>
+                  <td class="score-cell">{{ sess.metrics.limbSelectionRatio }}%</td>
+                  <td>{{ formatDominantHand(sess.metrics.predictedDominantHand || 'undetermined') }}</td>
+                  <td><span class="badge risk-badge">{{ formatRisk(sess.metrics.learnedNonUseRisk || 'undetermined') }}</span></td>
+                  <td>
+                    <span class="badge cognitive-badge">{{ sess.metrics.overallCognitiveScore !== undefined ? sess.metrics.overallCognitiveScore : 100 }}%</span>
+                  </td>
+                </tr>
+                <tr v-if="expandedSessionId === sess.sessionId" class="expandable-details-row">
+                  <td colspan="10" class="details-expanded-cell">
+                    <div class="details-expanded-container">
+                      <h4>📊 รายละเอียดจลนศาสตร์เชิงลึกสำหรับเซสชันนี้ (Detailed Kinematic Diagnostics)</h4>
+                      <div class="details-grid">
+                        <div class="details-column">
+                          <h5>มือซ้าย (Left Hand)</h5>
+                          <ul>
+                            <li><strong>Reaction Time:</strong> {{ sess.detailed?.left?.RT || 0 }} ms</li>
+                            <li><strong>Movement Time:</strong> {{ sess.detailed?.left?.MT || 0 }} ms</li>
+                            <li><strong>Target Success Rate:</strong> {{ sess.detailed?.left?.successRate || 0 }}%</li>
+                            <li><strong>Endpoint Precision Error:</strong> {{ sess.detailed?.left?.error || 0 }} px</li>
+                            <li><strong>Resting Jitter:</strong> {{ sess.detailed?.left?.jitter || 0 }} px</li>
+                            <li><strong>Path Smoothness:</strong> {{ sess.detailed?.left?.smoothness || 1.0 }}x</li>
+                          </ul>
+                        </div>
+                        <div class="details-column">
+                          <h5>มือขวา (Right Hand)</h5>
+                          <ul>
+                            <li><strong>Reaction Time:</strong> {{ sess.detailed?.right?.RT || 0 }} ms</li>
+                            <li><strong>Movement Time:</strong> {{ sess.detailed?.right?.MT || 0 }} ms</li>
+                            <li><strong>Target Success Rate:</strong> {{ sess.detailed?.right?.successRate || 0 }}%</li>
+                            <li><strong>Endpoint Precision Error:</strong> {{ sess.detailed?.right?.error || 0 }} px</li>
+                            <li><strong>Resting Jitter:</strong> {{ sess.detailed?.right?.jitter || 0 }} px</li>
+                            <li><strong>Path Smoothness:</strong> {{ sess.detailed?.right?.smoothness || 1.0 }}x</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -198,6 +272,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { Chart, registerables } from 'chart.js';
+import MedicalAssessmentEngine from '../utils/MedicalAssessmentEngine.js';
 
 Chart.register(...registerables);
 
@@ -289,6 +364,85 @@ const formatRisk = (risk) => {
   if (risk === 'low') return 'ต่ำ';
   return 'ยังไม่พอประเมิน';
 };
+
+const expandedSessionId = ref(null);
+const toggleExpandSession = (sessionId) => {
+  if (expandedSessionId.value === sessionId) {
+    expandedSessionId.value = null;
+  } else {
+    expandedSessionId.value = sessionId;
+  }
+};
+
+const analyzedSessions = computed(() => {
+  const currentPatient = patients.value.find(p => p.patientId === selectedPatientId.value);
+  const affectedSide = currentPatient?.affectedSide || 'right';
+  return sessions.value.map(s => {
+    let detailed = {
+      left: { RT: 0, MT: 0, successRate: 0, error: 0, jitter: 0, smoothness: 1.0 },
+      right: { RT: 0, MT: 0, successRate: 0, error: 0, jitter: 0, smoothness: 1.0 }
+    };
+    if (s.rawLogs && s.rawLogs.length > 0) {
+      const analysis = MedicalAssessmentEngine.analyze(s.rawLogs, { affectedSide });
+      detailed = analysis.detailedMetrics;
+    }
+    return {
+      ...s,
+      detailed
+    };
+  });
+});
+
+const avgLeftRT = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  return Math.round(analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.left?.RT || 0), 0) / analyzedSessions.value.length);
+});
+const avgRightRT = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  return Math.round(analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.right?.RT || 0), 0) / analyzedSessions.value.length);
+});
+
+const avgLeftMT = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  return Math.round(analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.left?.MT || 0), 0) / analyzedSessions.value.length);
+});
+const avgRightMT = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  return Math.round(analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.right?.MT || 0), 0) / analyzedSessions.value.length);
+});
+
+const avgLeftPrecision = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  const val = analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.left?.error || 0), 0) / analyzedSessions.value.length;
+  return Math.round(val * 10) / 10;
+});
+const avgRightPrecision = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  const val = analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.right?.error || 0), 0) / analyzedSessions.value.length;
+  return Math.round(val * 10) / 10;
+});
+
+const avgLeftJitterVal = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  const val = analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.left?.jitter || 0), 0) / analyzedSessions.value.length;
+  return Math.round(val * 100) / 100;
+});
+const avgRightJitterVal = computed(() => {
+  if (analyzedSessions.value.length === 0) return 0;
+  const val = analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.right?.jitter || 0), 0) / analyzedSessions.value.length;
+  return Math.round(val * 100) / 100;
+});
+
+const avgLeftSmoothnessVal = computed(() => {
+  if (analyzedSessions.value.length === 0) return 1.0;
+  const val = analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.left?.smoothness || 1.0), 0) / analyzedSessions.value.length;
+  return Math.round(val * 100) / 100;
+});
+const avgRightSmoothnessVal = computed(() => {
+  if (analyzedSessions.value.length === 0) return 1.0;
+  const val = analyzedSessions.value.reduce((acc, s) => acc + (s.detailed?.right?.smoothness || 1.0), 0) / analyzedSessions.value.length;
+  return Math.round(val * 100) / 100;
+});
 
 // Load patient lists & initial sessions
 const loadInitialData = async () => {
@@ -675,5 +829,100 @@ defineExpose({
 
 .font-mono {
   font-family: monospace;
+}
+
+.kinematics-comparison-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.kinematics-header-row {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1fr;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+}
+
+.kinematics-data-row {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr 1fr;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  align-items: center;
+}
+
+.col-title {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.text-indigo { color: #818cf8; }
+.text-pink { color: #f472b6; }
+
+.clickable-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.details-expanded-cell {
+  background: rgba(15, 23, 42, 0.4);
+  padding: 20px !important;
+}
+
+.details-expanded-container {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(11, 15, 25, 0.6);
+}
+
+.details-expanded-container h4 {
+  margin: 0 0 12px 0;
+  color: #2dd4bf;
+  font-size: 0.95rem;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.details-column h5 {
+  margin: 0 0 8px 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.details-column h5:first-of-type {
+  color: #818cf8;
+}
+
+.details-grid .details-column:last-of-type h5 {
+  color: #f472b6;
+}
+
+.details-column ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.details-column li {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.details-column li strong {
+  color: #f8fafc;
 }
 </style>

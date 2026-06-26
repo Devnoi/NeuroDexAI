@@ -9,7 +9,7 @@ const rawLogSchema = new mongoose.Schema({
   isCorrectTarget: { type: Boolean, default: true },
   requiredHand: {
     type: String,
-    enum: ['left', 'right', 'any'],
+    enum: ['left', 'right', 'any', 'both'],
     default: 'any'
   },
   leftFingerX: { type: Number, default: 0 },
@@ -18,7 +18,7 @@ const rawLogSchema = new mongoose.Schema({
   rightFingerY: { type: Number, default: 0 },
   usedHand: {
     type: String,
-    enum: ['left', 'right', 'none'],
+    enum: ['left', 'right', 'none', 'both'],
     default: 'none'
   },
   state: {
@@ -46,7 +46,7 @@ const sessionSchema = new mongoose.Schema({
   },
   gameMode: {
     type: String,
-    enum: ['random', 'forced'],
+    enum: ['random', 'forced', 'bilateral', 'range_of_motion', 'cognitive_match'],
     default: 'random'
   },
   metrics: {

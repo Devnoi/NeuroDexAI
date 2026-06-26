@@ -59,12 +59,21 @@
 
         <div class="form-group">
           <label>โหมดการประเมิน:</label>
-          <div class="radio-group">
+          <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
             <label class="radio-label" :class="{ active: gameMode === 'random' }">
-              <input type="radio" value="random" v-model="gameMode"> โหมดสุ่ม (ประเมินความพึงใจในการเลือกใช้มือ)
+              <input type="radio" value="random" v-model="gameMode"> 🎯 โหมดสุ่ม (ประเมินความพึงใจในการเลือกใช้มือ)
             </label>
             <label class="radio-label" :class="{ active: gameMode === 'forced' }">
-              <input type="radio" value="forced" v-model="gameMode"> โหมดบังคับข้าง (ประเมินการเอื้อมมือเฉพาะเจาะจง)
+              <input type="radio" value="forced" v-model="gameMode"> 🔒 โหมดบังคับข้าง (ประเมินเฉพาะข้างซีกอ่อนแรง)
+            </label>
+            <label class="radio-label" :class="{ active: gameMode === 'bilateral' }">
+              <input type="radio" value="bilateral" v-model="gameMode"> 👐 โหมดสองมือพร้อมกัน (Bilateral - ฝึกการประสานงานของสองมือ)
+            </label>
+            <label class="radio-label" :class="{ active: gameMode === 'range_of_motion' }">
+              <input type="radio" value="range_of_motion" v-model="gameMode"> 📐 โหมดขอบเขตข้อไหล่ (Range of Motion - วิเคราะห์องศาการเอื้อมสูง/ต่ำ)
+            </label>
+            <label class="radio-label" :class="{ active: gameMode === 'cognitive_match' }">
+              <input type="radio" value="cognitive_match" v-model="gameMode"> 🧠 โหมดสลับสีสแกนสมอง (Cognitive Matching - เปลี่ยนกฎเป้าหมายระหว่างเล่น)
             </label>
           </div>
         </div>
@@ -339,8 +348,40 @@ const postureStatus = ref('รอตรวจจับท่าทาง');
 const recordingStatus = ref('ยังไม่เริ่มบันทึก');
 const isRecordingVideo = ref(false);
 
-const gameMode = ref('random'); // random, forced
+const gameMode = ref('random'); // random, forced, bilateral, range_of_motion, cognitive_match
 const activeTarget = ref(null); // { x, y, vx, vy, side, spawnTime, requiredHand, shape, color, isCorrectTarget, outcome }
+const activeCognitiveRule = ref('red_circle');
+
+// Shoulder flexion angles
+const leftShoulderAngle = ref(null);
+const rightShoulderAngle = ref(null);
+
+const calculateShoulderAngle = (side) => {
+  if (!poseLandmarks.value || poseLandmarks.value.length === 0) return null;
+  const shoulderIdx = side === 'left' ? 11 : 12;
+  const elbowIdx = side === 'left' ? 13 : 14;
+  const hipIdx = side === 'left' ? 23 : 24;
+  
+  const shoulder = getVisibleLandmark(shoulderIdx);
+  const elbow = getVisibleLandmark(elbowIdx);
+  const hip = getVisibleLandmark(hipIdx);
+  
+  if (!shoulder || !elbow || !hip) return null;
+  
+  // Vectors
+  const v1 = { x: elbow.x - shoulder.x, y: elbow.y - shoulder.y };
+  const v2 = { x: hip.x - shoulder.x, y: hip.y - shoulder.y };
+  
+  const dotProduct = v1.x * v2.x + v1.y * v2.y;
+  const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+  const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+  
+  if (mag1 === 0 || mag2 === 0) return null;
+  
+  const cosAngle = dotProduct / (mag1 * mag2);
+  const angleRad = Math.acos(Math.max(-1.0, Math.min(1.0, cosAngle)));
+  return Math.round(angleRad * (180.0 / Math.PI));
+};
 
 // Logging throttle: 30Hz = ~33.3ms interval
 let lastLogTime = 0;
@@ -352,6 +393,75 @@ const formatRuleName = (rule) => {
   if (rule === 'blue_circle') return 'วงกลมสีน้ำเงิน 🔵';
   if (rule === 'blue_square') return 'สี่เหลี่ยมสีน้ำเงิน 🟦';
   return '';
+};
+
+// Sound & Voice Synthesis Helpers
+let audioCtx = null;
+const initAudioContext = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+};
+
+const synthesizeSound = (type) => {
+  try {
+    initAudioContext();
+    if (!audioCtx) return;
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+
+    if (type === 'hit') {
+      // Ascending chime
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } else if (type === 'miss') {
+      // Descending low buzzer
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.linearRampToValueAtTime(110, now + 0.4);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } else if (type === 'ping') {
+      // Clean short beep
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(660, now);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    }
+  } catch (err) {
+    console.warn('Audio context synthesis failed:', err);
+  }
+};
+
+const speakText = (text) => {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel(); // cancel previous speak to avoid overlapping
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'th-TH';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {
+    console.warn('Speech synthesis failed:', e);
+  }
 };
 
 // Particle Class definition for Visual Feedback
@@ -764,6 +874,7 @@ const beginAutoStartCountdown = () => {
   if (autoStartTimerId || gameState.value !== 'calibrating') return;
 
   autoStartCountdown.value = 3;
+  speakText("เตรียมตัว สาม");
   autoStartTimerId = setInterval(() => {
     const handsReady = processedFrameCount.value > 0 && isLeftFingerInRestZone.value && isRightFingerInRestZone.value;
     if (!handsReady || gameState.value !== 'calibrating') {
@@ -776,6 +887,9 @@ const beginAutoStartCountdown = () => {
       clearInterval(autoStartTimerId);
       autoStartTimerId = null;
       startGame();
+    } else {
+      if (autoStartCountdown.value === 2) speakText("สอง");
+      else if (autoStartCountdown.value === 1) speakText("หนึ่ง");
     }
   }, 1000);
 };
@@ -811,6 +925,8 @@ const startCalibration = async () => {
   processedFrameCount.value = 0;
   lastDetectionMessage.value = 'กำลังเตรียมโมเดลตรวจจับ';
   cancelAutoStartCountdown();
+
+  speakText("กรุณาจัดวางท่าทาง และวางมือในโซนพักเพื่อเริ่มการประเมินค่ะ");
 
   const cameraReady = hasAvailableCamera();
   if (!cameraReady) {
@@ -1026,6 +1142,8 @@ const startGame = () => {
   particles.value = [];
   stateMachineState.value = 'resting';
   
+  speakText("เริ่มการประเมินได้ค่ะ");
+
   currentTargetSpeed.value = BASE_SPEED;
   currentSpawnInterval.value = BASE_SPAWN_INTERVAL;
   startSessionRecording();
@@ -1079,17 +1197,75 @@ const scheduleNextTarget = () => {
 const spawnTarget = () => {
   if (gameState.value !== 'playing' || activeTarget.value) return;
 
-  const requiredHand = gameMode.value === 'forced' ? patientForm.affectedSide : 'any';
-  const side = requiredHand === 'any' ? (Math.random() > 0.5 ? 'left' : 'right') : requiredHand;
-  const spawnY = Math.random() * (CANVAS_HEIGHT - 220) + 80;
+  let requiredHand = 'any';
+  if (gameMode.value === 'forced') {
+    requiredHand = patientForm.affectedSide;
+  } else if (gameMode.value === 'bilateral') {
+    requiredHand = 'both';
+  }
   
-  const { colorName, shape, isCorrectTarget } = createTargetCognitiveProperties();
+  let side = 'any';
+  let spawnX = 0;
+  let spawnY = 0;
+  let vx = 0;
+  let vy = 0;
+  
+  if (gameMode.value === 'bilateral') {
+    side = 'center';
+    spawnX = CANVAS_WIDTH / 2;
+    spawnY = -targetRadius;
+    vx = 0;
+    vy = currentTargetSpeed.value * 0.75;
+  } else if (gameMode.value === 'range_of_motion') {
+    requiredHand = Math.random() > 0.5 ? 'left' : 'right';
+    side = requiredHand;
+    spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
+    // Spawn at extreme heights
+    spawnY = Math.random() > 0.5 ? (Math.random() * 40 + 40) : (Math.random() * 40 + CANVAS_HEIGHT - 130);
+    vx = side === 'left' ? currentTargetSpeed.value * 0.8 : -currentTargetSpeed.value * 0.8;
+    vy = 0;
+  } else {
+    side = requiredHand === 'any' ? (Math.random() > 0.5 ? 'left' : 'right') : requiredHand;
+    spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
+    spawnY = Math.random() * (CANVAS_HEIGHT - 220) + 80;
+    vx = side === 'left' ? currentTargetSpeed.value : -currentTargetSpeed.value;
+    vy = 0;
+  }
+  
+  // Handle cognitive match mode rule properties
+  let colorName = 'red';
+  let shape = 'circle';
+  let isCorrectTarget = true;
+  
+  if (gameMode.value === 'cognitive_match') {
+    const [ruleColor, ruleShape] = activeCognitiveRule.value.split('_');
+    const spawnCorrect = Math.random() < 0.65;
+    if (spawnCorrect) {
+      colorName = ruleColor;
+      shape = ruleShape;
+      isCorrectTarget = true;
+    } else {
+      const colors = ['red', 'blue'];
+      const shapes = ['circle', 'square'];
+      colorName = colors[Math.floor(Math.random() * colors.length)];
+      shape = shapes[Math.floor(Math.random() * shapes.length)];
+      if (colorName === ruleColor && shape === ruleShape) {
+        colorName = ruleColor === 'red' ? 'blue' : 'red';
+      }
+      isCorrectTarget = false;
+    }
+  } else {
+    const props = createTargetCognitiveProperties();
+    colorName = props.colorName;
+    shape = props.shape;
+    isCorrectTarget = props.isCorrectTarget;
+  }
 
   activeTarget.value = {
-    x: side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius,
+    x: spawnX,
     y: spawnY,
-    vx: side === 'left' ? currentTargetSpeed.value : -currentTargetSpeed.value,
-    vy: 0,
+    vx,
+    vy,
     side,
     spawnTime: Date.now(),
     requiredHand,
@@ -1243,11 +1419,67 @@ const startCanvasLoop = () => {
     ctx.fillStyle = isRightFingerInRestZone.value ? '#34d399' : '#2dd4bf';
     ctx.fillText("โซนพักมือขวา", rightRestZone.x + rightRestZone.width / 2, rightRestZone.y + rightRestZone.height / 2 + 5);
 
+    // Update shoulder angles
+    leftShoulderAngle.value = calculateShoulderAngle('left');
+    rightShoulderAngle.value = calculateShoulderAngle('right');
+    
+    // Draw shoulder angles on screen for feedback in Range of Motion mode
+    if (poseDetected.value) {
+      ctx.save();
+      ctx.fillStyle = '#10b981';
+      ctx.font = "bold 13px 'Courier New', sans-serif";
+      ctx.textAlign = 'center';
+      
+      const leftShoulderPoint = getVisibleLandmark(11);
+      if (leftShoulderPoint) {
+        const cp = toCanvasPoint(leftShoulderPoint);
+        ctx.fillText(`L: ${leftShoulderAngle.value || '--'}°`, cp.x, cp.y - 15);
+      }
+      const rightShoulderPoint = getVisibleLandmark(12);
+      if (rightShoulderPoint) {
+        const cp = toCanvasPoint(rightShoulderPoint);
+        ctx.fillText(`R: ${rightShoulderAngle.value || '--'}°`, cp.x, cp.y - 15);
+      }
+      ctx.restore();
+    }
+
+    // Shift cognitive rule every 8 seconds in matching mode
+    if (gameState.value === 'playing' && gameMode.value === 'cognitive_match') {
+      const ruleInterval = 8; // seconds
+      const elapsed = 60 - timeLeft.value;
+      const rules = ['red_circle', 'red_square', 'blue_circle', 'blue_square'];
+      const newRule = rules[Math.floor(elapsed / ruleInterval) % rules.length];
+      if (activeCognitiveRule.value !== newRule) {
+        activeCognitiveRule.value = newRule;
+        triggerParticleBurst(CANVAS_WIDTH / 2, 60, '#f59e0b');
+        synthesizeSound('ping');
+        speakText(`เปลี่ยนกฎเป้าหมาย สกัดกั้นเฉพาะ ${formatRuleName(newRule).replace('🔴','').replace('🟥','').replace('🔵','').replace('🟦','')} ค่ะ`);
+      }
+      
+      // Draw HUD Banner for Cognitive Match
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(CANVAS_WIDTH / 2 - 200, 20, 400, 40, 6);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.font = "bold 16px 'Courier New', sans-serif";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`เป้าหมาย: ${formatRuleName(activeCognitiveRule.value)}`, CANVAS_WIDTH / 2, 40);
+      ctx.restore();
+    }
+
     // 4. Update & Draw Target
     let detectedHandHit = 'none';
     if (activeTarget.value) {
       const target = activeTarget.value;
       target.x += target.vx;
+      target.y += target.vy; // Support vertical movement for bilateral
 
       // Draw Target (Circle or Square)
       ctx.save();
@@ -1258,6 +1490,12 @@ const startCanvasLoop = () => {
       ctx.fillStyle = target.color === 'red' ? '#ef4444' : '#3b82f6';
       ctx.strokeStyle = target.isCorrectTarget ? '#f8fafc' : 'rgba(248, 250, 252, 0.35)';
       ctx.lineWidth = target.isCorrectTarget ? 4 : 2;
+      
+      // Special border styling for Bilateral target
+      if (target.requiredHand === 'both') {
+        ctx.strokeStyle = '#eab308'; // Glowing gold border
+        ctx.lineWidth = 5;
+      }
       
       ctx.beginPath();
       if (target.shape === 'circle') {
@@ -1272,10 +1510,17 @@ const startCanvasLoop = () => {
       ctx.font = "bold 15px 'Outfit', sans-serif";
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(target.color === 'red' ? 'แดง' : 'น้ำเงิน', target.x, target.y);
+      if (target.requiredHand === 'both') {
+        ctx.fillText('ใช้ 2 มือ!', target.x, target.y);
+      } else {
+        ctx.fillText(target.color === 'red' ? 'แดง' : 'น้ำเงิน', target.x, target.y);
+      }
       ctx.restore();
 
       // Check collision with BOTH fingers
+      let leftCollides = false;
+      let rightCollides = false;
+      
       ['left', 'right'].forEach(hand => {
         const finger = hand === 'left' ? leftFingerCoords : rightFingerCoords;
         const detected = hand === 'left' ? leftHandDetected.value : rightHandDetected.value;
@@ -1286,10 +1531,33 @@ const startCanvasLoop = () => {
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist <= targetRadius + fingerIndicatorRadius) {
-            detectedHandHit = hand;
+            if (hand === 'left') leftCollides = true;
+            if (hand === 'right') rightCollides = true;
           }
         }
       });
+      
+      if (target.requiredHand === 'both') {
+        if (leftCollides && rightCollides) {
+          detectedHandHit = 'both';
+        } else if (leftCollides || rightCollides) {
+          // Partial hit: visual cue to use both hands
+          ctx.save();
+          ctx.fillStyle = '#ef4444';
+          ctx.font = "bold 16px 'Outfit', sans-serif";
+          ctx.textAlign = 'center';
+          ctx.fillText("กรุณาใช้ทั้งสองมือ!", target.x, target.y - targetRadius - 15);
+          ctx.restore();
+          
+          if (!target._warnedBilateral || Date.now() - target._warnedBilateral > 1500) {
+            target._warnedBilateral = Date.now();
+            speakText("กรุณาใช้ทั้งสองมือค่ะ");
+          }
+        }
+      } else {
+        if (leftCollides) detectedHandHit = 'left';
+        else if (rightCollides) detectedHandHit = 'right';
+      }
 
       if (detectedHandHit !== 'none') {
         const usedRequiredHand = target.requiredHand === 'any' || detectedHandHit === target.requiredHand;
@@ -1302,6 +1570,9 @@ const startCanvasLoop = () => {
         if (isValidHit) {
           const colorHex = target.color === 'red' ? '#f87171' : '#60a5fa';
           triggerParticleBurst(target.x, target.y, colorHex);
+          synthesizeSound('hit');
+        } else {
+          synthesizeSound('miss');
         }
 
         // Track rolling outcomes for adaptive scaling
@@ -1310,7 +1581,8 @@ const startCanvasLoop = () => {
         activeTarget.value = null;
         scheduleNextTarget();
       } else if ((target.vx > 0 && target.x > CANVAS_WIDTH + targetRadius) ||
-                 (target.vx < 0 && target.x < -targetRadius)) {
+                 (target.vx < 0 && target.x < -targetRadius) ||
+                 (target.vy > 0 && target.y > CANVAS_HEIGHT + targetRadius)) {
         stateMachineState.value = 'miss';
         target.outcome = 'miss';
         target.usedHand = 'none';
@@ -1319,6 +1591,7 @@ const startCanvasLoop = () => {
         // Missed correct target counts negatively for rolling scale
         if (target.isCorrectTarget) {
           rollingOutcomes.value.push({ timestamp: Date.now(), hit: false });
+          synthesizeSound('miss');
         }
 
         activeTarget.value = null;
@@ -1467,6 +1740,8 @@ const endSession = async () => {
   stopSessionRecording();
   stopAllTimers();
   gameState.value = 'submitting';
+
+  speakText("เสร็จสิ้นการประเมินแล้วค่ะ กำลังวิเคราะห์ผลลัพธ์จลนศาสตร์");
 
   stopCameraStream();
 
