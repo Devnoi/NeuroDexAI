@@ -1,5 +1,14 @@
 <template>
   <div class="rit-game-container glass-panel-glow">
+    <!-- Blocking Orientation Warning for Mobile/Tablet in Portrait -->
+    <div v-if="isMobileOrTablet && isPortrait" class="orientation-blocker">
+      <div class="blocker-content">
+        <div class="rotate-icon">🔄</div>
+        <h3>กรุณาหมุนอุปกรณ์เป็นแนวนอน</h3>
+        <p>ระบบประเมินจลนศาสตร์การเคลื่อนไหวจำเป็นต้องใช้หน้าจอในแนวนอน (Landscape Mode) เพื่อวิเคราะห์สรีระและพิกัดการเอื้อมสกัดกั้นได้อย่างถูกต้อง</p>
+      </div>
+    </div>
+
     <div class="game-header">
       <div class="header-info">
         <h2>ระบบประเมินการเอื้อมสกัดกั้นวัตถุ (RIT)</h2>
@@ -210,7 +219,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onUnmounted, nextTick, computed } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import axios from 'axios';
 import MedicalAssessmentEngine from '../utils/MedicalAssessmentEngine.js';
 
@@ -231,6 +240,50 @@ const timeLeft = ref(60);
 const sessionLogs = ref([]);
 const runtimeError = ref('');
 const autoStartCountdown = ref(0);
+
+// Orientation and device detection
+const isMobileOrTablet = ref(false);
+const isPortrait = ref(false);
+
+const checkOrientation = () => {
+  isMobileOrTablet.value = /Mobi|Android|iPhone|iPad|Macintosh/i.test(navigator.userAgent) && 
+                           (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+  isPortrait.value = window.innerHeight > window.innerWidth;
+};
+
+// Fullscreen helpers
+const enterFullscreen = () => {
+  const elem = document.documentElement;
+  try {
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch(err => console.warn('Fullscreen request failed:', err));
+    } else if (elem.webkitRequestFullscreen) {
+      elem.webkitRequestFullscreen();
+    } else if (elem.mozRequestFullScreen) {
+      elem.mozRequestFullScreen();
+    } else if (elem.msRequestFullscreen) {
+      elem.msRequestFullscreen();
+    }
+  } catch (e) {
+    console.warn('Fullscreen error:', e);
+  }
+};
+
+const exitFullscreen = () => {
+  try {
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+    }
+  } catch (e) {
+    console.warn('Exit fullscreen error:', e);
+  }
+};
 
 
 
@@ -918,6 +971,7 @@ const hasAvailableCamera = () => {
 };
 
 const startCalibration = async () => {
+  enterFullscreen();
   gameState.value = 'calibrating';
   loadingModel.value = true;
   runtimeError.value = '';
@@ -1691,6 +1745,7 @@ const startCanvasLoop = () => {
 };
 
 const abortSession = () => {
+  exitFullscreen();
   stopSessionRecording();
   stopAllTimers();
   stopCameraStream();
@@ -1737,6 +1792,7 @@ const stopCameraStream = () => {
 };
 
 const endSession = async () => {
+  exitFullscreen();
   stopSessionRecording();
   stopAllTimers();
   gameState.value = 'submitting';
@@ -1803,7 +1859,15 @@ const endSession = async () => {
   }
 };
 
+onMounted(() => {
+  checkOrientation();
+  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('orientationchange', checkOrientation);
+});
+
 onUnmounted(() => {
+  window.removeEventListener('resize', checkOrientation);
+  window.removeEventListener('orientationchange', checkOrientation);
   stopAllTimers();
   stopCameraStream();
   if (handsInstance) {
@@ -2203,5 +2267,39 @@ onUnmounted(() => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Orientation Blocker overlay */
+.orientation-blocker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #0f172a;
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+  box-sizing: border-box;
+  color: #fff;
+}
+
+.blocker-content {
+  max-width: 400px;
+}
+
+.rotate-icon {
+  font-size: 3rem;
+  margin-bottom: 20px;
+  animation: rotateAnim 2s infinite linear;
+}
+
+@keyframes rotateAnim {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(90deg); }
+  100% { transform: rotate(90deg); }
 }
 </style>
