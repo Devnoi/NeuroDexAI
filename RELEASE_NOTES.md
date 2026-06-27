@@ -1,4 +1,25 @@
 # 🚀 NeuroDex AI - Release Notes v1.0
+
+## NeuroDex AI v1.2 - Clinical Export and Referral Reporting Update
+
+เวอร์ชัน 1.2 เพิ่มความสามารถด้านเอกสารอ้างอิงทางคลินิกสำหรับส่งต่อแพทย์ นักกายภาพบำบัด และทีมเวชศาสตร์ฟื้นฟู โดยยังคงฐานระบบประเมิน RIT จาก v1.0 ไว้
+
+### สิ่งที่เพิ่มใน v1.2
+
+*   **English-only Clinical PDF Report**: เพิ่มปุ่มสร้างรายงานภาษาอังกฤษล้วนจาก Dashboard สำหรับพิมพ์หรือบันทึกเป็น PDF เพื่อใช้เป็นเอกสารส่งต่อผู้ป่วยให้แพทย์หรือทีมกายภาพบำบัดประเมินต่อ
+*   **CSV Clinical Summary Export**: เพิ่มการส่งออก CSV ระดับสรุปทั้งราย session และหลาย session ครอบคลุมคะแนน Speed, Accuracy, Quality, Cognitive Filtering, Limb Selection Ratio, Learned Non-Use Risk และ predicted dominant hand
+*   **Raw Frame CSV Export**: เพิ่มการส่งออกข้อมูล frame-by-frame จาก rawLogs เพื่อใช้ตรวจสอบเชิงลึกหรือวิเคราะห์ต่อใน spreadsheet/statistical tools
+*   **Round-by-Round Change Tracking**: เพิ่มตารางเปรียบเทียบการเปลี่ยนแปลงในแต่ละรอบ โดยเฉพาะ affected-limb quality delta, limb selection ratio และ cognitive score
+*   **Clinical Trend Graph**: เพิ่มกราฟแนวโน้มในรายงาน PDF แสดงการเปลี่ยนแปลงของ affected-limb quality ตามรอบการประเมิน
+*   **Physical Therapy Terminology Reference**: เพิ่มส่วนอ้างอิงศัพท์ภาษาอังกฤษทางกายภาพบำบัดที่จำเป็น เช่น Reaction Time, Movement Time, Endpoint Precision Error, Path Smoothness Index, Resting Jitter, Active Range of Motion, Compensatory Movement, Spasticity Screening Score, Learned Non-Use และ Bilateral Coordination
+*   **Detailed Kinematic Metrics**: รายงานใหม่ครอบคลุมค่า Reaction Time (RT), Movement Time (MT), Endpoint Precision Error, Resting Jitter, Path Smoothness Index, Shoulder AROM, Spasticity Screening Score, Compensation Percentage และจำนวน raw frames
+*   **Dashboard Export Controls**: เพิ่มปุ่ม Export CSV, English PDF Report และปุ่มต่อ session สำหรับ CSV, Raw CSV และ PDF ในตารางประวัติการประเมิน
+*   **Frontend Version Update**: อัปเดต frontend package version เป็น `1.2.0`
+
+### วัตถุประสงค์ทางคลินิก
+
+รายงาน v1.2 ถูกออกแบบให้ใช้เป็น reference สำหรับการส่งต่อข้อมูลระหว่างนักกายภาพบำบัด แพทย์เวชศาสตร์ฟื้นฟู และทีมรักษาที่เกี่ยวข้อง โดยแยกข้อมูลสรุปทางคลินิก ข้อมูลดิบ และคำศัพท์อ้างอิงภาษาอังกฤษให้พร้อมใช้งานมากขึ้น
+
 ## แพลตฟอร์มวิเคราะห์จลนศาสตร์และการฟื้นฟูผู้ป่วยโรคหลอดเลือดสมองทางไกล (Version 1.0)
 
 ยินดีต้อนรับสู่ **NeuroDex AI เวอร์ชัน 1.0** อย่างเป็นทางการ! เวอร์ชันนี้เป็นการเปิดตัวแพลตฟอร์มฟื้นฟูสมรรถภาพระดับคลินิกสำหรับผู้ป่วยโรคหลอดเลือดสมอง (Stroke) ผ่านกล้องเว็บแคมทั่วไปแบบไร้สัมผัส (Markerless Tracking) พร้อมด้วยระบบวิเคราะห์จลนศาสตร์ประสาท แดชบอร์ดแพทย์ และคอนโซลแพทย์ทางไกล (Telehealth) ที่สมบูรณ์แบบ
