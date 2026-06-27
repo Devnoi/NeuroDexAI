@@ -386,6 +386,12 @@ let currentRecordingUrl = null;
 const stateMachineState = ref('resting'); // resting, moving, hit, miss
 const leftFingerCoords = reactive({ x: 0, y: 0 });
 const rightFingerCoords = reactive({ x: 0, y: 0 });
+const leftFingerZ = ref(0);
+const rightFingerZ = ref(0);
+const leftHandSpasticity = ref('ปกติ'); // ปกติ, ตึงตัวปานกลาง, มือเกร็ง
+const rightHandSpasticity = ref('ปกติ');
+const leftHandSpasticityScore = ref(0);
+const rightHandSpasticityScore = ref(0);
 const leftHandDetected = ref(false);
 const rightHandDetected = ref(false);
 const isLeftFingerInRestZone = ref(false);
@@ -400,6 +406,47 @@ const modelError = ref('');
 const postureStatus = ref('รอตรวจจับท่าทาง');
 const recordingStatus = ref('ยังไม่เริ่มบันทึก');
 const isRecordingVideo = ref(false);
+
+const calculateHandSpasticity = (landmarks) => {
+  if (!landmarks || landmarks.length < 21) return { score: 0, status: 'ปกติ' };
+  
+  const wrist = landmarks[0];
+  const mcpPoints = [landmarks[5], landmarks[9], landmarks[13], landmarks[17]];
+  let wristToMcpDist = 0;
+  mcpPoints.forEach(p => {
+    const dx = p.x - wrist.x;
+    const dy = p.y - wrist.y;
+    const dz = p.z - wrist.z;
+    wristToMcpDist += Math.sqrt(dx*dx + dy*dy + dz*dz);
+  });
+  wristToMcpDist /= 4;
+  
+  const fingertips = [landmarks[4], landmarks[8], landmarks[12], landmarks[16], landmarks[20]];
+  const mcps = [landmarks[2], landmarks[5], landmarks[9], landmarks[13], landmarks[17]];
+  
+  let totalFingerExtension = 0;
+  for (let j = 0; j < 5; j++) {
+    const tip = fingertips[j];
+    const base = mcps[j];
+    const dx = tip.x - base.x;
+    const dy = tip.y - base.y;
+    const dz = tip.z - base.z;
+    totalFingerExtension += Math.sqrt(dx*dx + dy*dy + dz*dz);
+  }
+  totalFingerExtension /= 5;
+  
+  const ratio = totalFingerExtension / (wristToMcpDist || 1.0);
+  const score = Math.max(0, Math.min(100, Math.round((1 - ratio) * 100)));
+  
+  let status = 'ปกติ';
+  if (score > 60) {
+    status = 'มือเกร็งสะสม';
+  } else if (score > 40) {
+    status = 'เกร็งปานกลาง';
+  }
+  
+  return { score, status };
+};
 
 const gameMode = ref('random'); // random, forced, bilateral, range_of_motion, cognitive_match
 const activeTarget = ref(null); // { x, y, vx, vy, side, spawnTime, requiredHand, shape, color, isCorrectTarget, outcome }
@@ -751,6 +798,17 @@ const updatePostureStatus = () => {
   const hipAnkle = distanceBetween(leftHip, leftAnkle) || distanceBetween(rightHip, rightAnkle);
 
   if (!shoulderHip || !hipKnee) {
+    const nose = getVisibleLandmark(0);
+    if (nose && (leftShoulder || rightShoulder)) {
+      const avgShoulderY = (leftShoulder && rightShoulder) ? (leftShoulder.y + rightShoulder.y) / 2 : (leftShoulder?.y || rightShoulder?.y);
+      const neckYDiff = avgShoulderY - nose.y;
+      if (neckYDiff > 0.16 || avgShoulderY > 0.46) {
+        postureStatus.value = 'ยืนอยู่ (ตรวจจากส่วนบน)';
+      } else {
+        postureStatus.value = 'นั่งอยู่ (ตรวจจากส่วนบน)';
+      }
+      return;
+    }
     postureStatus.value = 'เห็นลำตัวบางส่วน';
     return;
   }
@@ -1142,7 +1200,12 @@ const onHandResults = (results) => {
       if (side === 'left') {
         leftFingerCoords.x = canvasX;
         leftFingerCoords.y = canvasY;
+        leftFingerZ.value = tip.z;
         leftHandDetected.value = true;
+
+        const spas = calculateHandSpasticity(landmarks);
+        leftHandSpasticity.value = spas.status;
+        leftHandSpasticityScore.value = spas.score;
 
         isLeftFingerInRestZone.value = 
           canvasX >= leftRestZone.x &&
@@ -1152,7 +1215,12 @@ const onHandResults = (results) => {
       } else {
         rightFingerCoords.x = canvasX;
         rightFingerCoords.y = canvasY;
+        rightFingerZ.value = tip.z;
         rightHandDetected.value = true;
+
+        const spas = calculateHandSpasticity(landmarks);
+        rightHandSpasticity.value = spas.status;
+        rightHandSpasticityScore.value = spas.score;
 
         isRightFingerInRestZone.value = 
           canvasX >= rightRestZone.x &&
@@ -1424,6 +1492,42 @@ const startCanvasLoop = () => {
       ctx.font = "bold 13px 'Inter', sans-serif";
       ctx.textAlign = 'left';
       ctx.fillText(`ท่าทาง: ${postureStatus.value}`, CANVAS_WIDTH - 206, 38);
+      ctx.restore();
+    }
+
+    if (leftHandDetected.value || rightHandDetected.value) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = 'rgba(45, 212, 191, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.roundRect(CANVAS_WIDTH - 222, 56, 206, 94, 8);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = '#2dd4bf';
+      ctx.font = "bold 11px 'Inter', sans-serif";
+      ctx.fillText('📡 3D DEPTH & SPASTICITY', CANVAS_WIDTH - 208, 72);
+      
+      ctx.font = "11px 'Inter', sans-serif";
+      if (leftHandDetected.value) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`L Z-Depth: ${leftFingerZ.value.toFixed(3)}`, CANVAS_WIDTH - 208, 90);
+        ctx.fillStyle = leftHandSpasticityScore.value > 60 ? '#ef4444' : (leftHandSpasticityScore.value > 40 ? '#f59e0b' : '#34d399');
+        ctx.fillText(`L เกร็ง: ${leftHandSpasticity.value}`, CANVAS_WIDTH - 208, 104);
+      } else {
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('L Hand: ไม่พบการสแกน', CANVAS_WIDTH - 208, 97);
+      }
+      
+      if (rightHandDetected.value) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`R Z-Depth: ${rightFingerZ.value.toFixed(3)}`, CANVAS_WIDTH - 208, 122);
+        ctx.fillStyle = rightHandSpasticityScore.value > 60 ? '#ef4444' : (rightHandSpasticityScore.value > 40 ? '#f59e0b' : '#34d399');
+        ctx.fillText(`R เกร็ง: ${rightHandSpasticity.value}`, CANVAS_WIDTH - 208, 136);
+      } else {
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('R Hand: ไม่พบการสแกน', CANVAS_WIDTH - 208, 129);
+      }
       ctx.restore();
     }
 

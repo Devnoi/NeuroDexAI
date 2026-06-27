@@ -41,6 +41,11 @@
 ### 3. พจนานุกรมศัพท์ทางการแพทย์ (Medical Glossary)
 *   ไฟล์คู่มือคำศัพท์ [MEDICAL_GLOSSARY.md](MEDICAL_GLOSSARY.md) รวบรวมนิยาม คำอ่านภาษาไทย และประเด็นความเกี่ยวข้องเชิงจลนศาสตร์ประสาทของคำสำคัญ เช่น Hemiparesis, Learned Non-Use (LNU), CIMT, Jitter, Smoothness และ Compensation
 
+### 4. ระบบตรวจจับมิติแกน Z และอาการเกร็งกล้ามเนื้อมือ (3D Z-Depth & Hand Spasticity)
+*   **3D Hand Z-Depth**: ยกระดับการวัดพิกัดความลึก (Z-Axis) ของมือทั้งสองซีกในการสัมผัสสกัดเป้าหมาย ช่วยประเมินระยะเอื้อมมิติเชิงลึก (Reach Depth)
+*   **Hand Spasticity Tracking**: ตรวจจับอาการเกร็งตัวและการกุมมือผิดปกติ (Clenched Fist/Rigidity) เรียลไทม์ โดยคำนวณอัตราส่วนการเหยียดนิ้วมือ (Finger Extension/MCP ratio)
+*   **Robust Sit/Stand Detection**: ปรับปรุงโมเดลตรวจจับการนั่งและการยืนให้มีความเสถียรและทำงานได้เต็มระบบ แม้เห็นเฉพาะข้อต่อส่วนลำตัวท่อนบน (Webcam View) ผ่านสัดส่วนองศาแนวช่วงคอและไหล่
+
 ---
 
 ## ✏️ การปรับปรุงสไลด์นำเสนอและข้อมูลในเวอร์ชันนี้ (Presentation & Local Improvements)
