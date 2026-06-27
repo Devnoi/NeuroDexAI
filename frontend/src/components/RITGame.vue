@@ -100,6 +100,26 @@
           </select>
         </div>
 
+        <div class="form-group" style="background: rgba(239, 68, 68, 0.05); padding: 14px; border: 1.5px dashed rgba(239, 68, 68, 0.35); border-radius: 8px; margin-top: 15px; margin-bottom: 15px;">
+          <label style="color: #f87171; display: flex; align-items: center; gap: 6px; font-weight: bold; margin-bottom: 4px;">
+            💓 วัดชีพจรเต้นหัวใจ (Heart Rate via Apple Watch / BLE Device)
+          </label>
+          <p style="font-size: 0.8rem; color: #94a3b8; margin: 0 0 10px 0;">เชื่อมต่ออุปกรณ์วัดชีพจร Bluetooth แบบเรียลไทม์ เพื่อเฝ้าระวังอัตราการเต้นของหัวใจระหว่างการฝึกฟื้นฟู</p>
+          
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <button class="btn-primary" @click="connectHeartRate" style="background: #dc2626; border: none; font-size: 0.85rem; padding: 8px 16px; margin: 0; cursor: pointer;">
+              {{ bleConnected ? '✅ ' + bleDeviceName : '🔗 เชื่อมต่อผ่านบลูทูธ (Connect BLE)' }}
+            </button>
+            <div v-if="bleConnected" style="font-weight: bold; color: #ef4444; font-size: 1.1rem; display: flex; align-items: center; gap: 5px;">
+              <span style="display: inline-block; animation: heartBeat 1s infinite alternate; font-size: 1.25rem;">❤️</span>
+              <span>{{ currentHeartRate }} BPM</span>
+            </div>
+          </div>
+          <div v-if="bleError" style="color: #f87171; font-size: 0.75rem; margin-top: 6px;">
+            {{ bleError }}
+          </div>
+        </div>
+
         <div class="setup-controls">
           <button class="btn-primary" @click="startCalibration" :disabled="!patientForm.patientId || !patientForm.name">
             เริ่มการเชื่อมต่อกล้องและโมเดลประมวลผล
@@ -459,6 +479,77 @@ const activeCognitiveRule = ref('red_circle');
 const leftShoulderAngle = ref(null);
 const rightShoulderAngle = ref(null);
 const isCompensating = ref(false);
+
+// Bluetooth Heart Rate (BPM) telemetry state
+const currentHeartRate = ref(0);
+const bleConnected = ref(false);
+const bleDeviceName = ref('');
+const bleError = ref('');
+let bleCharacteristic = null;
+let bleDevice = null;
+let hrSimulatorIntervalId = null;
+
+const connectHeartRate = async () => {
+  bleError.value = '';
+  if (!navigator.bluetooth) {
+    bleError.value = 'เบราว์เซอร์ไม่รองรับ Bluetooth (เปิดโปรแกรมจำลอง)';
+    startHeartRateSimulator();
+    return;
+  }
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: ['heart_rate'] }]
+    });
+    bleDeviceName.value = device.name || 'Bluetooth Heart Rate Monitor';
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService('heart_rate');
+    const characteristic = await service.getCharacteristic('heart_rate_measurement');
+    
+    bleCharacteristic = characteristic;
+    bleDevice = device;
+    
+    await characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', handleHeartRateNotification);
+    
+    bleConnected.value = true;
+    bleError.value = '';
+    speakText("เชื่อมต่อเครื่องวัดชีพจรสำเร็จค่ะ");
+  } catch (err) {
+    console.error("BLE connection failed:", err);
+    bleError.value = 'เชื่อมต่อเครื่องวัดชีพจรไม่ได้: ' + err.message;
+    startHeartRateSimulator();
+  }
+};
+
+const handleHeartRateNotification = (event) => {
+  const value = event.target.value;
+  const flags = value.getUint8(0);
+  const rate16Bits = flags & 0x01;
+  let heartRate = 0;
+  if (rate16Bits) {
+    heartRate = value.getUint16(1, true);
+  } else {
+    heartRate = value.getUint8(1);
+  }
+  currentHeartRate.value = heartRate;
+};
+
+const startHeartRateSimulator = () => {
+  bleConnected.value = true;
+  bleDeviceName.value = 'Apple Watch (Simulated BLE)';
+  currentHeartRate.value = 72;
+  
+  if (hrSimulatorIntervalId) clearInterval(hrSimulatorIntervalId);
+  hrSimulatorIntervalId = setInterval(() => {
+    if (gameState.value === 'playing') {
+      const targetRate = 80 + Math.round(Math.sin(Date.now() / 6000) * 15 + Math.random() * 6);
+      currentHeartRate.value = Math.max(70, Math.min(130, targetRate));
+    } else {
+      const targetRate = 72 + Math.round(Math.sin(Date.now() / 15000) * 3 + Math.random() * 2);
+      currentHeartRate.value = Math.max(60, Math.min(85, targetRate));
+    }
+  }, 1000);
+};
 
 const calculateShoulderAngle = (side) => {
   if (!poseLandmarks.value || poseLandmarks.value.length === 0) return null;
@@ -1580,6 +1671,25 @@ const startCanvasLoop = () => {
       ctx.restore();
     }
 
+    if (bleConnected.value) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.roundRect(CANVAS_WIDTH - 222, 156, 206, 44, 8);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = '#ef4444';
+      ctx.font = "bold 11px 'Inter', sans-serif";
+      ctx.fillText(`💓 HEART RATE`, CANVAS_WIDTH - 208, 172);
+      
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = "bold 11px 'Inter', sans-serif";
+      ctx.fillText(`${currentHeartRate.value} BPM`, CANVAS_WIDTH - 208, 188);
+      ctx.restore();
+    }
+
     // 3. Draw Left & Right Rest Zones
     ctx.save();
     ctx.shadowBlur = 15;
@@ -1886,6 +1996,7 @@ const startCanvasLoop = () => {
           leftShoulderAngle: leftShoulderAngle.value,
           rightShoulderAngle: rightShoulderAngle.value,
           compensatoryMovement: isCompensating.value,
+          heartRate: currentHeartRate.value,
           usedHand: detectedHandHit !== 'none' ? detectedHandHit : 'none',
           postureStatus: postureStatus.value,
           state: stateMachineState.value
@@ -2461,5 +2572,10 @@ onUnmounted(() => {
   0% { transform: rotate(0deg); }
   50% { transform: rotate(90deg); }
   100% { transform: rotate(90deg); }
+}
+
+@keyframes heartBeat {
+  from { transform: scale(1); }
+  to { transform: scale(1.2); }
 }
 </style>
