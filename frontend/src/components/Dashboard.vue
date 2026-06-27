@@ -180,6 +180,51 @@
         </div>
       </div>
 
+      <!-- Session to Session Progress Trends (Round to Round delta changes) -->
+      <div v-if="sessionTrends && sessionTrends.length > 0" class="history-section glass-panel" style="margin-bottom: 20px;">
+        <h3>📈 ตารางสรุปการเปลี่ยนแปลงและแนวโน้มกายภาพบำบัดรายเซสชัน (Session-to-Session PT Progress Trends)</h3>
+        <p class="chart-subtitle" style="margin-bottom: 12px;">วิเคราะห์ความแตกต่างของค่าจลนศาสตร์และขีดความสามารถการฟื้นตัวของกล้ามเนื้อประสาท เปรียบเทียบผลลัพธ์รอบต่อรอบ (Round-to-Round Delta)</p>
+        <div class="table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>เปรียบเทียบรอบเซสชัน (Sessions)</th>
+                <th>องศาข้อไหล่ซ้าย (AROM Delta Left)</th>
+                <th>องศาข้อไหล่ขวา (AROM Delta Right)</th>
+                <th>ความตึงเกร็งมือซ้าย (Spasticity Delta Left)</th>
+                <th>ความตึงเกร็งมือขวา (Spasticity Delta Right)</th>
+                <th>การเลือกใช้มือข้างอ่อนแรง (LSR Delta)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(trend, tIdx) in sessionTrends" :key="tIdx">
+                <td style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">
+                  เซสชันล่าสุด vs เซสชันก่อนหน้า
+                  <div style="font-size: 0.7rem; color: #94a3b8; font-weight: normal; margin-top: 2px;">
+                    (ID: {{ trend.sessionId.substring(0, 8) }}... vs {{ trend.prevSessionId.substring(0, 8) }}...)
+                  </div>
+                </td>
+                <td class="center" :style="{ color: trend.leftROMDiff > 0 ? '#34d399' : (trend.leftROMDiff < 0 ? '#ef4444' : '#94a3b8') }">
+                  {{ trend.leftROMDiff > 0 ? '+' : '' }}{{ trend.leftROMDiff }}°
+                </td>
+                <td class="center" :style="{ color: trend.rightROMDiff > 0 ? '#34d399' : (trend.rightROMDiff < 0 ? '#ef4444' : '#94a3b8') }">
+                  {{ trend.rightROMDiff > 0 ? '+' : '' }}{{ trend.rightROMDiff }}°
+                </td>
+                <td class="center" :style="{ color: trend.leftSpasDiff < 0 ? '#34d399' : (trend.leftSpasDiff > 0 ? '#ef4444' : '#94a3b8') }">
+                  {{ trend.leftSpasDiff > 0 ? '+' : '' }}{{ trend.leftSpasDiff }}%
+                </td>
+                <td class="center" :style="{ color: trend.rightSpasDiff < 0 ? '#34d399' : (trend.rightSpasDiff > 0 ? '#ef4444' : '#94a3b8') }">
+                  {{ trend.rightSpasDiff > 0 ? '+' : '' }}{{ trend.rightSpasDiff }}%
+                </td>
+                <td class="center" :style="{ color: trend.selectionRatioDiff > 0 ? '#34d399' : (trend.selectionRatioDiff < 0 ? '#ef4444' : '#94a3b8') }">
+                  {{ trend.selectionRatioDiff > 0 ? '+' : '' }}{{ trend.selectionRatioDiff }}%
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- History Table -->
       <div class="history-section glass-panel">
         <h3>ประวัติบันทึกเซสชัน</h3>
@@ -230,6 +275,16 @@
                 <tr v-if="expandedSessionId === sess.sessionId" class="expandable-details-row">
                   <td colspan="10" class="details-expanded-cell">
                     <div class="details-expanded-container">
+                      <!-- Export Action Buttons -->
+                      <div class="export-actions-row" style="display: flex; gap: 12px; margin-bottom: 15px; justify-content: flex-end;">
+                        <button class="btn-primary" @click.stop="exportCSV(sess)" style="background: #0d9488; padding: 6px 14px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;">
+                          📥 Export CSV Data
+                        </button>
+                        <button class="btn-primary" @click.stop="exportPDF(sess)" style="background: #6366f1; padding: 6px 14px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px;">
+                          📄 Export Clinical PDF (EN)
+                        </button>
+                      </div>
+
                       <!-- Clinical Diagnosis Report Panel -->
                       <div v-if="sess.gameMode === 'diagnostic' && getDiagnosticSummary(sess)" class="diagnostic-report-card glass-panel" style="margin-bottom: 20px; padding: 18px; border: 1.5px solid rgba(45, 212, 191, 0.45); background: rgba(15, 23, 42, 0.9);">
                         <h4 style="color: #2dd4bf; margin: 0 0 12px 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
@@ -310,6 +365,7 @@ import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { Chart, registerables } from 'chart.js';
 import MedicalAssessmentEngine from '../utils/MedicalAssessmentEngine.js';
+import { generateEnglishReportHTML } from '../utils/reportTemplate.js';
 
 Chart.register(...registerables);
 
@@ -496,6 +552,89 @@ const toggleExpandSession = (sessionId) => {
     expandedSessionId.value = sessionId;
   }
 };
+
+const exportCSV = (sess) => {
+  if (!sess || !sess.rawLogs || sess.rawLogs.length === 0) return;
+  let csvContent = "\uFEFF";
+  csvContent += "Frame,Timestamp,State,Required Hand,Observed Hand,Left Finger X,Left Finger Y,Left Finger Z,Right Finger X,Right Finger Y,Right Finger Z,Left Spasticity Score,Right Spasticity Score,Left Shoulder Angle,Right Shoulder Angle,Compensatory Movement\n";
+  
+  sess.rawLogs.forEach((log, index) => {
+    const row = [
+      index + 1,
+      log.timestamp,
+      log.state,
+      log.requiredHand || 'any',
+      log.usedHand || 'none',
+      log.leftFingerX || 0,
+      log.leftFingerY || 0,
+      log.leftFingerZ || 0,
+      log.rightFingerX || 0,
+      log.rightFingerY || 0,
+      log.rightFingerZ || 0,
+      log.leftSpasticityScore || 0,
+      log.rightSpasticityScore || 0,
+      log.leftShoulderAngle !== null && log.leftShoulderAngle !== undefined ? log.leftShoulderAngle : '',
+      log.rightShoulderAngle !== null && log.rightShoulderAngle !== undefined ? log.rightShoulderAngle : '',
+      log.compensatoryMovement ? "TRUE" : "FALSE"
+    ].join(",");
+    csvContent += row + "\n";
+  });
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `NeuroDex_Clinical_Data_${sess.sessionId}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const exportPDF = (sess) => {
+  if (!sess) return;
+  const currentPatient = patients.value.find(p => p.patientId === sess.patientId);
+  const summary = getDiagnosticSummary(sess);
+  const htmlContent = generateEnglishReportHTML(currentPatient, sess, summary, sess.rawLogs);
+  
+  const printWindow = window.open("", "_blank");
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
+const sessionTrends = computed(() => {
+  if (analyzedSessions.value.length < 2) return [];
+  const chrono = [...analyzedSessions.value].reverse();
+  const trends = [];
+  
+  for (let i = 1; i < chrono.length; i++) {
+    const prev = chrono[i - 1];
+    const curr = chrono[i];
+    
+    const prevSum = getDiagnosticSummary(prev) || { avgLeftShoulder: 0, avgRightShoulder: 0, avgLeftSpas: 0, avgRightSpas: 0 };
+    const currSum = getDiagnosticSummary(curr) || { avgLeftShoulder: 0, avgRightShoulder: 0, avgLeftSpas: 0, avgRightSpas: 0 };
+    
+    const leftROMDiff = (currSum.avgLeftShoulder || 0) - (prevSum.avgLeftShoulder || 0);
+    const rightROMDiff = (currSum.avgRightShoulder || 0) - (prevSum.avgRightShoulder || 0);
+    
+    const leftSpasDiff = (currSum.avgLeftSpas || 0) - (prevSum.avgLeftSpas || 0);
+    const rightSpasDiff = (currSum.avgRightSpas || 0) - (prevSum.avgRightSpas || 0);
+    
+    const selectionRatioDiff = (curr.metrics?.limbSelectionRatio || 0) - (prev.metrics?.limbSelectionRatio || 0);
+    
+    trends.push({
+      date: curr.date,
+      sessionId: curr.sessionId,
+      prevSessionId: prev.sessionId,
+      leftROMDiff,
+      rightROMDiff,
+      leftSpasDiff,
+      rightSpasDiff,
+      selectionRatioDiff
+    });
+  }
+  
+  return trends.reverse();
+});
 
 const analyzedSessions = computed(() => {
   const currentPatient = patients.value.find(p => p.patientId === selectedPatientId.value);
