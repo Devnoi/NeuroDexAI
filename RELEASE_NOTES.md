@@ -16,6 +16,8 @@
 *   **Advanced Clinical Risk Stratification**: เพิ่มการวิเคราะห์เชิงลึกสำหรับผู้ป่วยกลุ่มเสี่ยง โดยคำนวณคะแนนความเสี่ยง 0-100 จาก affected-limb quality decline, bilateral asymmetry, compensation burden, spasticity screening score, reaction-time delay, path smoothness, resting jitter และ cognitive filtering
 *   **High-Risk Flag Panel**: เพิ่มแผงบน Dashboard สำหรับแสดง active clinical flags พร้อมเหตุผลทางคลินิก เช่น High learned non-use risk, marked bilateral quality asymmetry, recent quality deterioration, high compensation burden และ delayed affected-side reaction time
 *   **Deep Medical Referral Data**: เพิ่มข้อมูล risk score, risk level, active risk flags และ clinical recommendations ลงใน CSV/PDF เพื่อใช้ประกอบการส่งต่อแพทย์เวชศาสตร์ฟื้นฟูหรือทีมกายภาพบำบัด
+*   **Thai Game Category Presets**: เพิ่มหมวดเกมภาษาไทยทั่วไปที่เข้าใจง่าย เช่น เลือกมือเอง, ใช้มือข้างที่ต้องฝึก, แตะให้ไว, แตะให้ตรง, ใช้สองมือพร้อมกัน, เอื้อมสูง-ต่ำ, แตะเฉพาะวงกลมแดง, เปลี่ยนกติกาเป็นช่วง, ตรวจรวมหลายด้าน และดูความล้าระหว่างทำซ้ำ
+*   **Clinician-Oriented Game Selection**: แต่ละชุดเกมตั้งเวลา ความเร็ว ความถี่เป้าหมาย และกติกาให้อัตโนมัติ เพื่อแยกการวัดตามความต้องการ เช่น การใช้มือจริง ความไว ความแม่น การใช้สองมือ ช่วงเอื้อม การทำตามกติกา และการเก็บข้อมูลละเอียดสำหรับแพทย์
 *   **Dashboard Export Controls**: เพิ่มปุ่ม Export CSV, English PDF Report และปุ่มต่อ session สำหรับ CSV, Raw CSV และ PDF ในตารางประวัติการประเมิน
 *   **Frontend Version Update**: อัปเดต frontend package version เป็น `1.2.0`
 

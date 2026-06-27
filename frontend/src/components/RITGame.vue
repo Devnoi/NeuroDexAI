@@ -67,30 +67,28 @@
         </div>
 
         <div class="form-group">
-          <label>โหมดการประเมิน:</label>
-          <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
-            <label class="radio-label" :class="{ active: gameMode === 'random' }">
-              <input type="radio" value="random" v-model="gameMode"> 🎯 โหมดสุ่ม (ประเมินความพึงใจในการเลือกใช้มือ)
-            </label>
-            <label class="radio-label" :class="{ active: gameMode === 'forced' }">
-              <input type="radio" value="forced" v-model="gameMode"> 🔒 โหมดบังคับข้าง (ประเมินเฉพาะข้างซีกอ่อนแรง)
-            </label>
-            <label class="radio-label" :class="{ active: gameMode === 'bilateral' }">
-              <input type="radio" value="bilateral" v-model="gameMode"> 👐 โหมดสองมือพร้อมกัน (Bilateral - ฝึกการประสานงานของสองมือ)
-            </label>
-            <label class="radio-label" :class="{ active: gameMode === 'range_of_motion' }">
-              <input type="radio" value="range_of_motion" v-model="gameMode"> 📐 โหมดขอบเขตข้อไหล่ (Range of Motion - วิเคราะห์องศาการเอื้อมสูง/ต่ำ)
-            </label>
-            <label class="radio-label" :class="{ active: gameMode === 'cognitive_match' }">
-              <input type="radio" value="cognitive_match" v-model="gameMode"> 🧠 โหมดสลับสีสแกนสมอง (Cognitive Matching - เปลี่ยนกฎเป้าหมายระหว่างเล่น)
-            </label>
-            <label class="radio-label" :class="{ active: gameMode === 'diagnostic' }">
-              <input type="radio" value="diagnostic" v-model="gameMode"> 📊 โหมดวิเคราะห์เชิงลึกทางการแพทย์ (Clinical Diagnostics - บันทึก Z-depth, อาการเกร็ง และสรีระไหล่ 3D)
-            </label>
+          <label>เลือกเกมตามสิ่งที่ต้องการดู:</label>
+          <div class="game-preset-groups">
+            <section v-for="category in gamePresetCategories" :key="category.title" class="preset-category">
+              <h4>{{ category.title }}</h4>
+              <div class="preset-grid">
+                <label
+                  v-for="preset in category.items"
+                  :key="preset.id"
+                  class="preset-card"
+                  :class="{ active: selectedGamePreset === preset.id }"
+                >
+                  <input type="radio" :value="preset.id" v-model="selectedGamePreset" @change="applyGamePreset(preset.id)">
+                  <span class="preset-title">{{ preset.icon }} {{ preset.title }}</span>
+                  <span class="preset-desc">{{ preset.description }}</span>
+                  <span class="preset-meta">{{ preset.duration }} วินาที · {{ preset.focus }}</span>
+                </label>
+              </div>
+            </section>
           </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" v-if="gameMode === 'cognitive_match' || gameMode === 'diagnostic'">
           <label for="cognitive-rule">กฎการกรองความรู้ความเข้าใจ (Cognitive Rule):</label>
           <select id="cognitive-rule" v-model="cognitiveRule" class="form-input">
             <option value="red_circle">สกัดกั้นเฉพาะวงกลมสีแดงเท่านั้น (หลีกเลี่ยงเป้าหมายอื่น)</option>
@@ -203,7 +201,7 @@
         </div>
         
         <div class="progress-bar-container">
-          <div class="progress-bar-fill" :style="{ width: `${(60 - timeLeft) / 60 * 100}%` }"></div>
+          <div class="progress-bar-fill" :style="{ width: `${((assessmentDuration - timeLeft) / assessmentDuration) * 100}%` }"></div>
         </div>
 
         <button class="btn-secondary abort-btn" @click="abortSession">
@@ -313,6 +311,7 @@ const currentTargetSpeed = ref(BASE_SPEED);
 const BASE_SPAWN_INTERVAL = 3000; // ms
 const currentSpawnInterval = ref(BASE_SPAWN_INTERVAL);
 const rollingOutcomes = ref([]); // array of { timestamp, hit }
+const assessmentDuration = ref(60);
 
 // Cognitive Rule Variables
 const cognitiveRule = ref('red_circle'); // red_circle, red_square, blue_circle, blue_square
@@ -452,8 +451,168 @@ const calculateHandSpasticity = (landmarks) => {
 };
 
 const gameMode = ref('random'); // random, forced, bilateral, range_of_motion, cognitive_match
+const selectedGamePreset = ref('free_choice');
 const activeTarget = ref(null); // { x, y, vx, vy, side, spawnTime, requiredHand, shape, color, isCorrectTarget, outcome }
 const activeCognitiveRule = ref('red_circle');
+
+const gamePresetCategories = [
+  {
+    title: 'หมวดวัดการใช้มือ',
+    items: [
+      {
+        id: 'free_choice',
+        icon: '🎯',
+        title: 'เลือกมือเอง',
+        description: 'เป้าหมายเข้ามาจากซ้ายหรือขวา ผู้ป่วยเลือกใช้มือที่ถนัดเอง',
+        focus: 'ดูว่าชอบใช้มือข้างไหน',
+        mode: 'random',
+        duration: 60,
+        speed: 4.5,
+        spawnInterval: 3000
+      },
+      {
+        id: 'weak_side_practice',
+        icon: '🔒',
+        title: 'ใช้มือข้างที่ต้องฝึก',
+        description: 'ระบบให้ใช้มือข้างที่เลือกไว้เป็นหลัก เพื่อดูความสามารถของข้างนั้น',
+        focus: 'ดูแรงและความมั่นใจของข้างที่ต้องฝึก',
+        mode: 'forced',
+        duration: 60,
+        speed: 4.0,
+        spawnInterval: 3200
+      }
+    ]
+  },
+  {
+    title: 'หมวดวัดความเร็วและความแม่น',
+    items: [
+      {
+        id: 'quick_reach',
+        icon: '⚡',
+        title: 'แตะให้ไว',
+        description: 'เป้าหมายเคลื่อนเร็วขึ้น เพื่อดูการเริ่มขยับและความเร็วในการเอื้อม',
+        focus: 'ดูความไวและเวลาตอบสนอง',
+        mode: 'random',
+        duration: 45,
+        speed: 6.2,
+        spawnInterval: 2100
+      },
+      {
+        id: 'steady_touch',
+        icon: '🎯',
+        title: 'แตะให้ตรง',
+        description: 'เป้าหมายช้าลงเล็กน้อย เพื่อเน้นความนิ่งและความแม่น',
+        focus: 'ดูความแม่นและการสั่น',
+        mode: 'random',
+        duration: 60,
+        speed: 3.2,
+        spawnInterval: 3400
+      }
+    ]
+  },
+  {
+    title: 'หมวดวัดสองมือและลำตัว',
+    items: [
+      {
+        id: 'two_hands_together',
+        icon: '👐',
+        title: 'ใช้สองมือพร้อมกัน',
+        description: 'ให้แตะเป้าหมายด้วยสองมือพร้อมกัน เพื่อดูการประสานงาน',
+        focus: 'ดูการใช้สองมือร่วมกัน',
+        mode: 'bilateral',
+        duration: 60,
+        speed: 4.2,
+        spawnInterval: 3200
+      },
+      {
+        id: 'reach_high_low',
+        icon: '↕️',
+        title: 'เอื้อมสูง-ต่ำ',
+        description: 'เป้าหมายอยู่หลายระดับ เพื่อดูว่าผู้ป่วยเอื้อมได้ไกลและสูงแค่ไหน',
+        focus: 'ดูช่วงเอื้อมและการเอียงตัว',
+        mode: 'range_of_motion',
+        duration: 60,
+        speed: 4.0,
+        spawnInterval: 3000
+      }
+    ]
+  },
+  {
+    title: 'หมวดทำตามกติกา',
+    items: [
+      {
+        id: 'follow_red_circle',
+        icon: '🔴',
+        title: 'แตะเฉพาะวงกลมแดง',
+        description: 'มีเป้าหมายหลอกปนอยู่ ผู้ป่วยต้องแตะเฉพาะสิ่งที่กำหนด',
+        focus: 'ดูการทำตามกติกา',
+        mode: 'cognitive_match',
+        rule: 'red_circle',
+        duration: 60,
+        speed: 4.2,
+        spawnInterval: 2800
+      },
+      {
+        id: 'switch_rule_game',
+        icon: '🔄',
+        title: 'เปลี่ยนกติกาเป็นช่วง',
+        description: 'กติกาเป้าหมายเปลี่ยนระหว่างเล่น เพื่อดูการปรับตัว',
+        focus: 'ดูสมาธิและการเปลี่ยนตามคำสั่ง',
+        mode: 'cognitive_match',
+        rule: 'blue_square',
+        duration: 75,
+        speed: 4.0,
+        spawnInterval: 2600
+      }
+    ]
+  },
+  {
+    title: 'หมวดตรวจละเอียดสำหรับแพทย์',
+    items: [
+      {
+        id: 'doctor_overview',
+        icon: '📊',
+        title: 'ตรวจรวมหลายด้าน',
+        description: 'รวมหลายรูปแบบในรอบเดียว เพื่อเก็บข้อมูลสำหรับส่งต่อแพทย์',
+        focus: 'ดูภาพรวมเชิงลึก',
+        mode: 'diagnostic',
+        rule: 'red_circle',
+        duration: 90,
+        speed: 4.5,
+        spawnInterval: 2800
+      },
+      {
+        id: 'fatigue_check',
+        icon: '⏱️',
+        title: 'ดูความล้าระหว่างทำซ้ำ',
+        description: 'เล่นนานขึ้นและเก็บข้อมูลหลายช่วง เพื่อดูว่าคุณภาพลดลงหรือไม่',
+        focus: 'ดูความล้าและการเปลี่ยนแปลง',
+        mode: 'diagnostic',
+        rule: 'blue_circle',
+        duration: 120,
+        speed: 4.0,
+        spawnInterval: 3000
+      }
+    ]
+  }
+];
+
+const allGamePresets = computed(() => gamePresetCategories.flatMap(category => category.items));
+
+const applyGamePreset = (presetId) => {
+  const preset = allGamePresets.value.find(item => item.id === presetId) || allGamePresets.value[0];
+  if (!preset) return;
+
+  selectedGamePreset.value = preset.id;
+  gameMode.value = preset.mode;
+  assessmentDuration.value = preset.duration;
+  currentTargetSpeed.value = preset.speed;
+  currentSpawnInterval.value = preset.spawnInterval;
+  if (preset.rule) {
+    cognitiveRule.value = preset.rule;
+    activeCognitiveRule.value = preset.rule;
+  }
+};
 
 // Shoulder flexion angles
 const leftShoulderAngle = ref(null);
@@ -1046,6 +1205,7 @@ const hasAvailableCamera = () => {
 };
 
 const startCalibration = async () => {
+  applyGamePreset(selectedGamePreset.value);
   enterFullscreen();
   gameState.value = 'calibrating';
   loadingModel.value = true;
@@ -1271,9 +1431,10 @@ const updateDetectionMessage = () => {
 };
 
 const startGame = () => {
+  applyGamePreset(selectedGamePreset.value);
   cancelAutoStartCountdown();
   gameState.value = 'playing';
-  timeLeft.value = 60;
+  timeLeft.value = assessmentDuration.value;
   sessionLogs.value = [];
   rollingOutcomes.value = [];
   activeTarget.value = null;
@@ -1283,11 +1444,9 @@ const startGame = () => {
   
   speakText("เริ่มการประเมินได้ค่ะ");
 
-  currentTargetSpeed.value = BASE_SPEED;
-  currentSpawnInterval.value = BASE_SPAWN_INTERVAL;
   startSessionRecording();
 
-  // Game Duration Timer (60s)
+  // Game Duration Timer
   gameTimerId = setInterval(() => {
     timeLeft.value--;
     if (timeLeft.value <= 0) {
@@ -1653,7 +1812,7 @@ const startCanvasLoop = () => {
     // Shift cognitive rule every 8 seconds in matching mode
     if (gameState.value === 'playing' && gameMode.value === 'cognitive_match') {
       const ruleInterval = 8; // seconds
-      const elapsed = 60 - timeLeft.value;
+      const elapsed = assessmentDuration.value - timeLeft.value;
       const rules = ['red_circle', 'red_square', 'blue_circle', 'blue_square'];
       const newRule = rules[Math.floor(elapsed / ruleInterval) % rules.length];
       if (activeCognitiveRule.value !== newRule) {
@@ -2161,6 +2320,78 @@ onUnmounted(() => {
   background: rgba(13, 148, 136, 0.15);
   border-color: hsl(var(--accent-teal));
   color: #fff;
+}
+
+.game-preset-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.preset-category {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preset-category h4 {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 118px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.preset-card:hover {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(13, 148, 136, 0.1);
+}
+
+.preset-card.active {
+  border-color: #2dd4bf;
+  background: rgba(13, 148, 136, 0.18);
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.24);
+}
+
+.preset-card input {
+  display: none;
+}
+
+.preset-title {
+  color: #f8fafc;
+  font-weight: 800;
+  font-size: 0.95rem;
+}
+
+.preset-desc {
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.preset-meta {
+  color: #2dd4bf;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-top: auto;
 }
 
 /* Arena Layout */
