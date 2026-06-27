@@ -13,6 +13,12 @@
             {{ patient.name }} ({{ patient.patientId }}) - ข้างที่อ่อนแรง: {{ patient.affectedSide === 'left' ? 'ซ้าย' : 'ขวา' }}
           </option>
         </select>
+        <button class="report-btn" @click="exportCurrentCsv" :disabled="analyzedSessions.length === 0">
+          Export CSV
+        </button>
+        <button class="report-btn primary-report" @click="exportCurrentPdf" :disabled="analyzedSessions.length === 0">
+          English PDF Report
+        </button>
       </div>
     </div>
 
@@ -197,6 +203,7 @@
                 <th>ผลทำนาย</th>
                 <th>Learned Non-Use</th>
                 <th>คะแนนการรู้คิด</th>
+                <th>Export</th>
               </tr>
             </thead>
             <tbody>
@@ -226,9 +233,14 @@
                   <td>
                     <span class="badge cognitive-badge">{{ sess.metrics.overallCognitiveScore !== undefined ? sess.metrics.overallCognitiveScore : 100 }}%</span>
                   </td>
+                  <td class="export-cell" @click.stop>
+                    <button class="mini-report-btn" @click="exportSessionCsv(sess)">CSV</button>
+                    <button class="mini-report-btn" @click="exportSessionRawCsv(sess)">Raw</button>
+                    <button class="mini-report-btn" @click="exportSessionPdf(sess)">PDF</button>
+                  </td>
                 </tr>
                 <tr v-if="expandedSessionId === sess.sessionId" class="expandable-details-row">
-                  <td colspan="10" class="details-expanded-cell">
+                  <td colspan="11" class="details-expanded-cell">
                     <div class="details-expanded-container">
                       <!-- Clinical Diagnosis Report Panel -->
                       <div v-if="sess.gameMode === 'diagnostic' && getDiagnosticSummary(sess)" class="diagnostic-report-card glass-panel" style="margin-bottom: 20px; padding: 18px; border: 1.5px solid rgba(45, 212, 191, 0.45); background: rgba(15, 23, 42, 0.9);">
@@ -310,6 +322,11 @@ import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { Chart, registerables } from 'chart.js';
 import MedicalAssessmentEngine from '../utils/MedicalAssessmentEngine.js';
+import {
+  exportPrintablePdfReport,
+  exportRawFrameCsv,
+  exportSessionsCsv
+} from '../utils/reportTemplate.js';
 
 Chart.register(...registerables);
 
@@ -511,10 +528,31 @@ const analyzedSessions = computed(() => {
     }
     return {
       ...s,
-      detailed
+      detailed,
+      diagnosticSummary: getDiagnosticSummary(s)
     };
   });
 });
+
+const exportCurrentCsv = () => {
+  exportSessionsCsv(analyzedSessions.value, patients.value);
+};
+
+const exportCurrentPdf = () => {
+  exportPrintablePdfReport(analyzedSessions.value, patients.value);
+};
+
+const exportSessionCsv = (session) => {
+  exportSessionsCsv([session], patients.value);
+};
+
+const exportSessionRawCsv = (session) => {
+  exportRawFrameCsv(session);
+};
+
+const exportSessionPdf = (session) => {
+  exportPrintablePdfReport([session], patients.value);
+};
 
 const avgLeftRT = computed(() => {
   if (analyzedSessions.value.length === 0) return 0;
@@ -658,6 +696,10 @@ const renderChart = () => {
   const labels = sessions.value.map(s => new Date(s.date).toLocaleDateString());
   const leftQualityData = sessions.value.map(s => s.metrics?.leftHandQuality || 0);
   const rightQualityData = sessions.value.map(s => s.metrics?.rightHandQuality || 0);
+  const currentPatient = patients.value.find(p => p.patientId === selectedPatientId.value);
+  const affectedSide = currentPatient?.affectedSide || 'right';
+  const affectedQualityData = sessions.value.map(s => affectedSide === 'left' ? (s.metrics?.leftHandQuality || 0) : (s.metrics?.rightHandQuality || 0));
+  const limbSelectionData = sessions.value.map(s => s.metrics?.limbSelectionRatio || 0);
 
   chartInstance = new Chart(ctx, {
     type: 'line',
@@ -679,6 +721,23 @@ const renderChart = () => {
           backgroundColor: 'rgba(244, 114, 182, 0.1)',
           tension: 0.3,
           borderWidth: 3
+        },
+        {
+          label: 'Affected limb quality change (%)',
+          data: affectedQualityData,
+          borderColor: 'rgb(251, 191, 36)',
+          backgroundColor: 'rgba(251, 191, 36, 0.1)',
+          borderDash: [6, 4],
+          tension: 0.25,
+          borderWidth: 3
+        },
+        {
+          label: 'Affected limb selection ratio (%)',
+          data: limbSelectionData,
+          borderColor: 'rgb(52, 211, 153)',
+          backgroundColor: 'rgba(52, 211, 153, 0.1)',
+          tension: 0.25,
+          borderWidth: 2
         }
       ]
     },
@@ -751,10 +810,54 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .select-input {
   min-width: 250px;
+}
+
+.report-btn,
+.mini-report-btn {
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(15, 23, 42, 0.72);
+  color: #e0f2fe;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.report-btn {
+  padding: 10px 14px;
+  font-size: 0.82rem;
+}
+
+.report-btn:hover,
+.mini-report-btn:hover {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.report-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.primary-report {
+  border-color: rgba(45, 212, 191, 0.5);
+  color: #ccfbf1;
+}
+
+.mini-report-btn {
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  margin: 2px;
+}
+
+.export-cell {
+  min-width: 118px;
+  white-space: nowrap;
 }
 
 .clinical-alert-banner {
