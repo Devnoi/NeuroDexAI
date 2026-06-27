@@ -51,6 +51,56 @@
 
     <!-- Active Dashboard -->
     <div v-else class="dashboard-grid">
+      <div class="advanced-risk-panel glass-panel" :class="advancedClinicalRiskClass">
+        <div class="advanced-risk-header">
+          <div>
+            <h3>Advanced Clinical Risk Stratification</h3>
+            <p>วิเคราะห์เชิงลึกสำหรับผู้ป่วยกลุ่มเสี่ยงจาก quality decline, asymmetry, compensation, spasticity, reaction delay และ cognitive filtering</p>
+          </div>
+          <div class="risk-score-display">
+            <span class="risk-score-number">{{ advancedClinicalRisk.score }}</span>
+            <span class="risk-score-label">/100</span>
+            <strong>{{ advancedClinicalRisk.level }}</strong>
+          </div>
+        </div>
+
+        <div class="risk-domain-grid">
+          <div class="risk-domain">
+            <span class="domain-label">Affected Quality</span>
+            <strong>{{ advancedClinicalRisk.domains.affectedQuality || 0 }}%</strong>
+          </div>
+          <div class="risk-domain">
+            <span class="domain-label">Quality Asymmetry</span>
+            <strong>{{ advancedClinicalRisk.domains.qualityAsymmetry || 0 }} pts</strong>
+          </div>
+          <div class="risk-domain">
+            <span class="domain-label">Recent Decline</span>
+            <strong>{{ advancedClinicalRisk.domains.trendDrop || 0 }} pts</strong>
+          </div>
+          <div class="risk-domain">
+            <span class="domain-label">Compensation</span>
+            <strong>{{ advancedClinicalRisk.domains.compensatoryMovementPercent || 0 }}%</strong>
+          </div>
+          <div class="risk-domain">
+            <span class="domain-label">Spasticity Screen</span>
+            <strong>{{ advancedClinicalRisk.domains.affectedSpasticity || 0 }}</strong>
+          </div>
+          <div class="risk-domain">
+            <span class="domain-label">RT Delay</span>
+            <strong>{{ advancedClinicalRisk.domains.reactionDelay || 0 }} ms</strong>
+          </div>
+        </div>
+
+        <div class="risk-flag-list">
+          <div v-if="advancedClinicalRisk.flags.length === 0" class="risk-flag ok-flag">
+            No high-priority risk flag detected from the current dataset.
+          </div>
+          <div v-for="flag in advancedClinicalRisk.flags" :key="`${flag.domain}-${flag.label}`" class="risk-flag">
+            <strong>{{ flag.label }}</strong>
+            <span>{{ flag.rationale }}</span>
+          </div>
+        </div>
+      </div>
       
       <!-- side-by-side stats -->
       <div class="comparison-cards">
@@ -323,6 +373,7 @@ import axios from 'axios';
 import { Chart, registerables } from 'chart.js';
 import MedicalAssessmentEngine from '../utils/MedicalAssessmentEngine.js';
 import {
+  computeAdvancedClinicalRisk,
   exportPrintablePdfReport,
   exportRawFrameCsv,
   exportSessionsCsv
@@ -532,6 +583,16 @@ const analyzedSessions = computed(() => {
       diagnosticSummary: getDiagnosticSummary(s)
     };
   });
+});
+
+const advancedClinicalRisk = computed(() => computeAdvancedClinicalRisk(analyzedSessions.value, patients.value));
+
+const advancedClinicalRiskClass = computed(() => {
+  const level = advancedClinicalRisk.value.level;
+  if (level === 'High risk') return 'risk-high-panel';
+  if (level === 'Moderate risk') return 'risk-moderate-panel';
+  if (level === 'Watchlist') return 'risk-watch-panel';
+  return 'risk-low-panel';
 });
 
 const exportCurrentCsv = () => {
@@ -916,6 +977,140 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.advanced-risk-panel {
+  padding: 22px;
+  border-width: 1.5px;
+}
+
+.advanced-risk-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.advanced-risk-header h3 {
+  margin: 0 0 6px 0;
+  color: #f8fafc;
+  font-size: 1.15rem;
+}
+
+.advanced-risk-header p {
+  margin: 0;
+  color: hsl(var(--text-muted));
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.risk-score-display {
+  min-width: 130px;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.risk-score-number {
+  font-family: 'Outfit', sans-serif;
+  font-size: 3rem;
+  line-height: 0.9;
+  font-weight: 800;
+}
+
+.risk-score-label {
+  color: hsl(var(--text-muted));
+  font-size: 0.8rem;
+}
+
+.risk-domain-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.risk-domain {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.domain-label {
+  display: block;
+  color: hsl(var(--text-muted));
+  font-size: 0.72rem;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.risk-domain strong {
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.risk-flag-list {
+  display: grid;
+  gap: 8px;
+}
+
+.risk-flag {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(251, 113, 133, 0.1);
+  border: 1px solid rgba(251, 113, 133, 0.25);
+}
+
+.risk-flag strong {
+  color: #fb7185;
+  font-size: 0.86rem;
+}
+
+.risk-flag span {
+  color: #fecdd3;
+  font-size: 0.78rem;
+}
+
+.ok-flag {
+  background: rgba(52, 211, 153, 0.09);
+  border-color: rgba(52, 211, 153, 0.25);
+  color: #bbf7d0;
+}
+
+.risk-high-panel {
+  border-color: rgba(251, 113, 133, 0.55);
+}
+
+.risk-high-panel .risk-score-number,
+.risk-high-panel .risk-score-display strong {
+  color: #fb7185;
+}
+
+.risk-moderate-panel,
+.risk-watch-panel {
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.risk-moderate-panel .risk-score-number,
+.risk-moderate-panel .risk-score-display strong,
+.risk-watch-panel .risk-score-number,
+.risk-watch-panel .risk-score-display strong {
+  color: #fbbf24;
+}
+
+.risk-low-panel {
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.risk-low-panel .risk-score-number,
+.risk-low-panel .risk-score-display strong {
+  color: #34d399;
 }
 
 .comparison-cards {

@@ -59,6 +59,92 @@ const handName = (hand) => ({
   undetermined: 'Undetermined'
 }[hand] || 'Undetermined');
 
+export const computeAdvancedClinicalRisk = (sessions, patients = []) => {
+  const rows = buildSessionReportRows(sessions, patients);
+  const latest = rows[rows.length - 1];
+  if (!latest) {
+    return {
+      score: 0,
+      level: 'Insufficient data',
+      flags: [],
+      domains: {},
+      interpretation: 'No assessment data is available for advanced risk stratification.',
+      recommendations: ['Collect at least one complete RIT assessment with raw kinematic logs.']
+    };
+  }
+
+  const previous = rows[rows.length - 2];
+  const affectedSide = latest.affectedSide === 'Left' ? 'left' : 'right';
+  const unaffectedSide = affectedSide === 'left' ? 'right' : 'left';
+  const affectedQuality = latest.affectedLimbQualityScore || 0;
+  const unaffectedQuality = unaffectedSide === 'left' ? latest.leftQualityScore : latest.rightQualityScore;
+  const qualityAsymmetry = Math.max(0, number(unaffectedQuality - affectedQuality, 1));
+  const affectedRt = affectedSide === 'left' ? latest.leftReactionTimeMs : latest.rightReactionTimeMs;
+  const unaffectedRt = unaffectedSide === 'left' ? latest.leftReactionTimeMs : latest.rightReactionTimeMs;
+  const reactionDelay = Math.max(0, number(affectedRt - unaffectedRt, 1));
+  const affectedSmoothness = affectedSide === 'left' ? latest.leftPathSmoothnessIndex : latest.rightPathSmoothnessIndex;
+  const affectedJitter = affectedSide === 'left' ? latest.leftRestingJitterPx : latest.rightRestingJitterPx;
+  const affectedSpasticity = affectedSide === 'left' ? latest.leftSpasticityMeanScore : latest.rightSpasticityMeanScore;
+  const trendDrop = previous ? Math.max(0, number(previous.affectedLimbQualityScore - affectedQuality, 1)) : 0;
+  const cumulativeDrop = rows.length >= 3 ? Math.max(0, number(rows[rows.length - 3].affectedLimbQualityScore - affectedQuality, 1)) : trendDrop;
+
+  const flags = [];
+  let score = 0;
+  const addFlag = (condition, points, label, rationale, domain) => {
+    if (!condition) return;
+    score += points;
+    flags.push({ label, rationale, points, domain });
+  };
+
+  addFlag(latest.learnedNonUseRisk === 'High', 22, 'High learned non-use risk', 'The affected limb is being selected less often than expected for its motor capacity.', 'behavioral use');
+  addFlag(latest.limbSelectionRatio < 25, 18, 'Very low affected-limb selection', 'Affected-limb use is below 25 percent during choice-based trials.', 'behavioral use');
+  addFlag(qualityAsymmetry >= 20, 15, 'Marked bilateral quality asymmetry', `Unaffected-minus-affected quality gap is ${qualityAsymmetry} percentage points.`, 'motor asymmetry');
+  addFlag(trendDrop >= 8, 14, 'Recent quality deterioration', `Affected-limb quality dropped ${trendDrop} percentage points from the previous round.`, 'trajectory');
+  addFlag(cumulativeDrop >= 12, 12, 'Multi-round decline pattern', `Affected-limb quality decreased ${cumulativeDrop} percentage points across recent rounds.`, 'trajectory');
+  addFlag(latest.compensatoryMovementPercent >= 20, 12, 'High compensation burden', `Compensatory movement was present in ${latest.compensatoryMovementPercent}% of frames.`, 'postural control');
+  addFlag(affectedSpasticity >= 55, 12, 'Elevated spasticity screening score', `Affected-side spasticity screening mean is ${affectedSpasticity}.`, 'tone');
+  addFlag(reactionDelay >= 250, 8, 'Delayed affected-side reaction time', `Affected-side reaction time is ${reactionDelay} ms slower than the opposite side.`, 'motor planning');
+  addFlag(affectedSmoothness >= 1.8, 8, 'Reduced path smoothness', `Affected-side path smoothness index is ${number(affectedSmoothness, 2)}; values closer to 1.00 are smoother.`, 'movement quality');
+  addFlag(affectedJitter >= 4, 7, 'Resting instability', `Affected-side resting jitter is ${number(affectedJitter, 2)} px.`, 'motor control');
+  addFlag(latest.cognitiveFilteringScore < 75, 8, 'Cognitive filtering concern', `Cognitive filtering score is ${latest.cognitiveFilteringScore}%.`, 'cognition');
+
+  score = Math.min(100, Math.round(score));
+  const level = score >= 70 ? 'High risk' : score >= 45 ? 'Moderate risk' : score >= 20 ? 'Watchlist' : 'Low current risk';
+  const domains = {
+    affectedQuality,
+    unaffectedQuality,
+    qualityAsymmetry,
+    trendDrop,
+    cumulativeDrop,
+    limbSelectionRatio: latest.limbSelectionRatio,
+    compensatoryMovementPercent: latest.compensatoryMovementPercent,
+    affectedSpasticity,
+    reactionDelay,
+    affectedSmoothness: number(affectedSmoothness, 2),
+    affectedJitter: number(affectedJitter, 2),
+    cognitiveFilteringScore: latest.cognitiveFilteringScore
+  };
+
+  const recs = recommendations(latest);
+  if (score >= 70) {
+    recs.unshift('High-risk profile: consider physician review, formal tone assessment, pain/fatigue screening, and supervised rehabilitation plan adjustment before increasing task load.');
+  } else if (score >= 45) {
+    recs.unshift('Moderate-risk profile: increase monitoring frequency and review task setup, affected-limb practice dosage, and compensatory movement control.');
+  }
+  if (qualityAsymmetry >= 20) {
+    recs.push('Quantify side-to-side impairment with standardized upper-limb outcome measures such as Fugl-Meyer Upper Extremity, ARAT, or Box and Block Test when available.');
+  }
+
+  return {
+    score,
+    level,
+    flags,
+    domains,
+    interpretation: `${level} profile with ${flags.length} active clinical flag(s). This screening result should be interpreted together with neurological examination, pain, fatigue, medication timing, and therapist observation.`,
+    recommendations: [...new Set(recs)]
+  };
+};
+
 export const physicalTherapyTerminology = [
   ['Reaction Time (RT)', 'Time from target presentation to movement onset, reported in milliseconds.'],
   ['Movement Time (MT)', 'Time from movement onset to endpoint contact or trial resolution.'],
@@ -136,6 +222,15 @@ export const buildSessionReportRows = (sessions, patients = []) => {
 
 export const exportSessionsCsv = (sessions, patients = []) => {
   const rows = buildSessionReportRows(sessions, patients);
+  const rowsWithRisk = rows.map((row, index) => {
+    const risk = computeAdvancedClinicalRisk(sessions.slice(0, index + 1), patients);
+    return {
+      ...row,
+      advancedRiskScore: risk.score,
+      advancedRiskLevel: risk.level,
+      activeRiskFlags: risk.flags.map(flag => flag.label).join('; ')
+    };
+  });
   const headers = [
     'roundNumber',
     'sessionId',
@@ -173,12 +268,15 @@ export const exportSessionsCsv = (sessions, patients = []) => {
     'leftSpasticityMeanScore',
     'rightSpasticityMeanScore',
     'compensatoryMovementPercent',
+    'advancedRiskScore',
+    'advancedRiskLevel',
+    'activeRiskFlags',
     'rawFrameCount'
   ];
 
   const csv = [
     headers.map(csvCell).join(','),
-    ...rows.map(row => headers.map(header => csvCell(row[header])).join(','))
+    ...rowsWithRisk.map(row => headers.map(header => csvCell(row[header])).join(','))
   ].join('\n');
 
   const patientPart = sessions.length === 1 ? sessions[0].patientId : 'cohort';
@@ -277,6 +375,7 @@ const recommendations = (latestRow) => {
 export const exportPrintablePdfReport = (sessions, patients = []) => {
   const rows = buildSessionReportRows(sessions, patients);
   const latest = rows[rows.length - 1];
+  const advancedRisk = computeAdvancedClinicalRisk(sessions, patients);
   const patient = latest ? patients.find(p => p.patientId === latest.patientId) || {} : {};
   const terminologyRows = physicalTherapyTerminology
     .map(([term, definition]) => `<tr><td>${term}</td><td>${definition}</td></tr>`)
@@ -308,6 +407,13 @@ export const exportPrintablePdfReport = (sessions, patients = []) => {
     </tr>
   `).join('');
   const recRows = recommendations(latest).map(item => `<li>${item}</li>`).join('');
+  const riskFlagRows = advancedRisk.flags.length
+    ? advancedRisk.flags.map(flag => `<tr><td>${flag.domain}</td><td>${flag.label}</td><td>${flag.points}</td><td>${flag.rationale}</td></tr>`).join('')
+    : '<tr><td colspan="4">No active high-priority clinical flags were detected.</td></tr>';
+  const domainRows = Object.entries(advancedRisk.domains)
+    .map(([key, value]) => `<tr><td>${key}</td><td>${value}</td></tr>`)
+    .join('');
+  const advancedRecRows = advancedRisk.recommendations.map(item => `<li>${item}</li>`).join('');
 
   const html = `
 <!doctype html>
@@ -327,6 +433,8 @@ export const exportPrintablePdfReport = (sessions, patients = []) => {
     th { background: #e2e8f0; text-align: left; }
     .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin: 12px 0; font-size: 12px; }
     .note { background: #eff6ff; border: 1px solid #bfdbfe; padding: 10px; font-size: 12px; }
+    .riskbox { background: #fff7ed; border: 1px solid #fed7aa; padding: 10px; margin: 10px 0; }
+    .risk-score { font-size: 20px; font-weight: 700; color: #9a3412; }
     .chart { margin: 12px 0; }
   </style>
 </head>
@@ -353,6 +461,24 @@ export const exportPrintablePdfReport = (sessions, patients = []) => {
     Cognitive filtering score: <strong>${latest?.cognitiveFilteringScore ?? 100}%</strong>.
   </p>
   <ul>${recRows}</ul>
+
+  <h2>Advanced Clinical Risk Stratification</h2>
+  <div class="riskbox">
+    <div class="risk-score">${advancedRisk.score}/100 - ${advancedRisk.level}</div>
+    <p>${advancedRisk.interpretation}</p>
+  </div>
+  <h3>Active Clinical Flags</h3>
+  <table>
+    <thead><tr><th>Domain</th><th>Flag</th><th>Points</th><th>Clinical Rationale</th></tr></thead>
+    <tbody>${riskFlagRows}</tbody>
+  </table>
+  <h3>Risk Domain Values</h3>
+  <table>
+    <thead><tr><th>Domain Variable</th><th>Latest Value</th></tr></thead>
+    <tbody>${domainRows}</tbody>
+  </table>
+  <h3>High-Risk Clinical Recommendations</h3>
+  <ul>${advancedRecRows}</ul>
 
   <h2>Round-by-Round Change Table</h2>
   <table>

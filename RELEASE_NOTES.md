@@ -13,6 +13,9 @@
 *   **Clinical Trend Graph**: เพิ่มกราฟแนวโน้มในรายงาน PDF แสดงการเปลี่ยนแปลงของ affected-limb quality ตามรอบการประเมิน
 *   **Physical Therapy Terminology Reference**: เพิ่มส่วนอ้างอิงศัพท์ภาษาอังกฤษทางกายภาพบำบัดที่จำเป็น เช่น Reaction Time, Movement Time, Endpoint Precision Error, Path Smoothness Index, Resting Jitter, Active Range of Motion, Compensatory Movement, Spasticity Screening Score, Learned Non-Use และ Bilateral Coordination
 *   **Detailed Kinematic Metrics**: รายงานใหม่ครอบคลุมค่า Reaction Time (RT), Movement Time (MT), Endpoint Precision Error, Resting Jitter, Path Smoothness Index, Shoulder AROM, Spasticity Screening Score, Compensation Percentage และจำนวน raw frames
+*   **Advanced Clinical Risk Stratification**: เพิ่มการวิเคราะห์เชิงลึกสำหรับผู้ป่วยกลุ่มเสี่ยง โดยคำนวณคะแนนความเสี่ยง 0-100 จาก affected-limb quality decline, bilateral asymmetry, compensation burden, spasticity screening score, reaction-time delay, path smoothness, resting jitter และ cognitive filtering
+*   **High-Risk Flag Panel**: เพิ่มแผงบน Dashboard สำหรับแสดง active clinical flags พร้อมเหตุผลทางคลินิก เช่น High learned non-use risk, marked bilateral quality asymmetry, recent quality deterioration, high compensation burden และ delayed affected-side reaction time
+*   **Deep Medical Referral Data**: เพิ่มข้อมูล risk score, risk level, active risk flags และ clinical recommendations ลงใน CSV/PDF เพื่อใช้ประกอบการส่งต่อแพทย์เวชศาสตร์ฟื้นฟูหรือทีมกายภาพบำบัด
 *   **Dashboard Export Controls**: เพิ่มปุ่ม Export CSV, English PDF Report และปุ่มต่อ session สำหรับ CSV, Raw CSV และ PDF ในตารางประวัติการประเมิน
 *   **Frontend Version Update**: อัปเดต frontend package version เป็น `1.2.0`
 
