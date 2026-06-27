@@ -431,8 +431,10 @@ let targetSpawnTimerId = null;
 let difficultyScalerIntervalId = null;
 let autoStartTimerId = null;
 let lastResolvedTarget = null;
-let isProcessingFrame = false;
-let lastModelProcessTime = 0;
+let isProcessingHands = false;
+let isProcessingPose = false;
+let lastHandsProcessTime = 0;
+let lastPoseProcessTime = 0;
 let mediaRecorder = null;
 let recordedChunks = [];
 let currentRecordingUrl = null;
@@ -1588,32 +1590,50 @@ const startCanvasLoop = () => {
     // 1. Draw webcam feed mirrored. Keep calibration bright so users can verify camera framing.
     if (videoElement.value && (videoElement.value.readyState >= 2 || videoElement.value.videoWidth > 0)) {
       const now = Date.now();
-      if (!isProcessingFrame && (now - lastModelProcessTime > 50) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
-        isProcessingFrame = true;
-        lastModelProcessTime = now;
+      
+      // 1. Hands Tracking (Throttled to 85ms - approx 12 FPS, very smooth for interactive gameplay)
+      if (!isProcessingHands && (now - lastHandsProcessTime > 85) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
+        isProcessingHands = true;
+        lastHandsProcessTime = now;
         
-        const frameTimeoutId = setTimeout(() => {
-          if (isProcessingFrame) {
-            console.warn("MediaPipe frame processing timed out, forcing reset");
-            isProcessingFrame = false;
+        const handsTimeoutId = setTimeout(() => {
+          if (isProcessingHands) {
+            isProcessingHands = false;
           }
-        }, 250);
+        }, 200);
 
         handsInstance.send({ image: videoElement.value })
-          .then(() => {
-            return poseInstance.send({ image: videoElement.value });
-          })
           .then(() => {
             processedFrameCount.value += 1;
             modelError.value = '';
           })
           .catch(error => {
-            console.error('MediaPipe frame processing failed:', error);
-            modelError.value = 'โมเดลประมวลผลภาพล้มเหลว กรุณาลองรีเฟรชหรือเช็กอินเทอร์เน็ต';
+            console.error('Hands tracking failed:', error);
           })
           .finally(() => {
-            clearTimeout(frameTimeoutId);
-            isProcessingFrame = false;
+            clearTimeout(handsTimeoutId);
+            isProcessingHands = false;
+          });
+      }
+
+      // 2. Pose/Posture/Shoulder ROM Tracking (Throttled to 350ms - 3 FPS is perfectly sufficient for slow joints/postures)
+      if (!isProcessingPose && (now - lastPoseProcessTime > 350) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
+        isProcessingPose = true;
+        lastPoseProcessTime = now;
+        
+        const poseTimeoutId = setTimeout(() => {
+          if (isProcessingPose) {
+            isProcessingPose = false;
+          }
+        }, 500);
+
+        poseInstance.send({ image: videoElement.value })
+          .catch(error => {
+            console.error('Pose tracking failed:', error);
+          })
+          .finally(() => {
+            clearTimeout(poseTimeoutId);
+            isProcessingPose = false;
           });
       }
 
@@ -2041,7 +2061,8 @@ const stopAllTimers = () => {
   if (autoStartTimerId) clearInterval(autoStartTimerId);
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   autoStartTimerId = null;
-  isProcessingFrame = false;
+  isProcessingHands = false;
+  isProcessingPose = false;
 };
 
 const stopCameraStream = () => {
