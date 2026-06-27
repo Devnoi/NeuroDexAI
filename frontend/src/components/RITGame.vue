@@ -383,6 +383,7 @@ let lastModelProcessTime = 0;
 let mediaRecorder = null;
 let recordedChunks = [];
 let currentRecordingUrl = null;
+let currentRecordingMimeType = 'video/mp4';
 
 // Telemetry state machine variables
 const stateMachineState = ref('resting'); // resting, moving, hit, miss
@@ -1009,8 +1010,25 @@ const resetRecordingState = () => {
   }
   recordedChunks = [];
   mediaRecorder = null;
+  currentRecordingMimeType = 'video/mp4';
   isRecordingVideo.value = false;
   recordingStatus.value = 'ยังไม่เริ่มบันทึก';
+};
+
+const getSupportedMp4MimeType = () => {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+
+  const mp4Types = [
+    'video/mp4;codecs="avc1.42E01E"',
+    'video/mp4;codecs=avc1.42E01E',
+    'video/mp4;codecs="avc1.4D401E"',
+    'video/mp4;codecs=avc1.4D401E',
+    'video/mp4;codecs="h264"',
+    'video/mp4;codecs=h264',
+    'video/mp4'
+  ];
+
+  return mp4Types.find(type => MediaRecorder.isTypeSupported(type)) || '';
 };
 
 const startSessionRecording = () => {
@@ -1023,16 +1041,14 @@ const startSessionRecording = () => {
 
   try {
     const stream = canvasElement.value.captureStream(30);
-    const supportedTypes = [
-      'video/mp4;codecs=h264',
-      'video/mp4;codecs=vp9',
-      'video/mp4',
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8',
-      'video/webm'
-    ];
-    const mimeType = supportedTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
-    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const mimeType = getSupportedMp4MimeType();
+    if (!mimeType) {
+      recordingStatus.value = 'เบราว์เซอร์นี้ยังไม่รองรับการบันทึก MP4 โดยตรง กรุณาใช้ Safari หรือ Chrome/Edge เวอร์ชันที่รองรับ MP4 MediaRecorder';
+      return;
+    }
+
+    currentRecordingMimeType = mimeType;
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
@@ -1047,7 +1063,7 @@ const startSessionRecording = () => {
 
     mediaRecorder.start(1000);
     isRecordingVideo.value = true;
-    recordingStatus.value = 'กำลังบันทึกวิดีโอการทดสอบ';
+    recordingStatus.value = 'กำลังบันทึกวิดีโอ MP4 การทดสอบ';
   } catch (error) {
     console.error('Video recording failed:', error);
     recordingStatus.value = 'เริ่มบันทึกวิดีโอไม่สำเร็จ';
@@ -1077,14 +1093,8 @@ const saveRecordingToComputer = () => {
     return;
   }
 
-  let mimeType = 'video/mp4';
-  if (mediaRecorder && mediaRecorder.mimeType && MediaRecorder.isTypeSupported(mediaRecorder.mimeType)) {
-    if (mediaRecorder.mimeType.includes('mp4')) {
-      mimeType = mediaRecorder.mimeType;
-    }
-  }
-
-  const blob = new Blob(recordedChunks, { type: mimeType });
+  const mimeType = mediaRecorder?.mimeType?.includes('mp4') ? mediaRecorder.mimeType : currentRecordingMimeType;
+  const blob = new Blob(recordedChunks, { type: mimeType || 'video/mp4' });
   currentRecordingUrl = URL.createObjectURL(blob);
   const patientId = patientForm.patientId || 'patient';
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
