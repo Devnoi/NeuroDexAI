@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './db.js';
 import sessionRoutes from './routes/sessionRoutes.js';
+import telemedRoutes from './routes/telemedRoutes.js';
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ app.use(express.json({ limit: '50mb' })); // Allow large rawLogs payloads
 
 // API routes
 app.use('/api', sessionRoutes);
+app.use('/api/telemed', telemedRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

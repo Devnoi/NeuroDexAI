@@ -23,6 +23,13 @@
         >
           แดชบอร์ดข้อมูลทางคลินิก
         </button>
+        <button 
+          class="nav-tab-btn" 
+          :class="{ active: currentTab === 'telemed' }"
+          @click="currentTab = 'telemed'"
+        >
+          แพทย์ทางไกล & ปรึกษาแบบเรียลไทม์ (Telehealth)
+        </button>
       </nav>
     </header>
 
@@ -70,6 +77,9 @@
       <div v-show="currentTab === 'dashboard'">
         <Dashboard ref="dashboardRef" />
       </div>
+      <div v-show="currentTab === 'telemed'">
+        <Telehealth />
+      </div>
     </main>
 
     <!-- Footer -->
@@ -83,6 +93,7 @@
 import { ref } from 'vue';
 import RITGame from './components/RITGame.vue';
 import Dashboard from './components/Dashboard.vue';
+import Telehealth from './components/Telehealth.vue';
 
 const currentTab = ref('welcome');
 const dashboardRef = ref(null);
