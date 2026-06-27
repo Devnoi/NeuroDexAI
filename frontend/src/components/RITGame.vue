@@ -131,7 +131,7 @@
     <!-- Calibration / Testing Screen -->
     <div v-show="gameState === 'calibrating' || gameState === 'playing'" class="arena-wrapper">
       <!-- Hidden Video Element for MediaPipe -->
-      <video ref="videoElement" class="hidden-video" autoplay playsinline muted></video>
+      <video ref="videoElement" class="hidden-video" width="640" height="480" autoplay playsinline muted></video>
 
       <!-- Main Interaction Canvas -->
       <div class="canvas-container">
@@ -1591,6 +1591,14 @@ const startCanvasLoop = () => {
       if (!isProcessingFrame && (now - lastModelProcessTime > 50) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
         isProcessingFrame = true;
         lastModelProcessTime = now;
+        
+        const frameTimeoutId = setTimeout(() => {
+          if (isProcessingFrame) {
+            console.warn("MediaPipe frame processing timed out, forcing reset");
+            isProcessingFrame = false;
+          }
+        }, 250);
+
         handsInstance.send({ image: videoElement.value })
           .then(() => {
             return poseInstance.send({ image: videoElement.value });
@@ -1604,6 +1612,7 @@ const startCanvasLoop = () => {
             modelError.value = 'โมเดลประมวลผลภาพล้มเหลว กรุณาลองรีเฟรชหรือเช็กอินเทอร์เน็ต';
           })
           .finally(() => {
+            clearTimeout(frameTimeoutId);
             isProcessingFrame = false;
           });
       }
@@ -2296,10 +2305,10 @@ onUnmounted(() => {
 
 .hidden-video {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+  left: -9999px;
+  top: -9999px;
+  width: 640px;
+  height: 480px;
 }
 
 /* Overlays on Canvas */
