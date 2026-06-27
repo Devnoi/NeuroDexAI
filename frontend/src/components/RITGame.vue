@@ -1591,18 +1591,21 @@ const startCanvasLoop = () => {
       if (!isProcessingFrame && (now - lastModelProcessTime > 50) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
         isProcessingFrame = true;
         lastModelProcessTime = now;
-        Promise.all([
-          handsInstance.send({ image: videoElement.value }),
-          poseInstance.send({ image: videoElement.value })
-        ]).then(() => {
-          processedFrameCount.value += 1;
-          modelError.value = '';
-        }).catch(error => {
-          console.error('MediaPipe frame processing failed:', error);
-          modelError.value = 'โมเดลประมวลผลภาพล้มเหลว กรุณาลองรีเฟรชหรือเช็กอินเทอร์เน็ต';
-        }).finally(() => {
-          isProcessingFrame = false;
-        });
+        handsInstance.send({ image: videoElement.value })
+          .then(() => {
+            return poseInstance.send({ image: videoElement.value });
+          })
+          .then(() => {
+            processedFrameCount.value += 1;
+            modelError.value = '';
+          })
+          .catch(error => {
+            console.error('MediaPipe frame processing failed:', error);
+            modelError.value = 'โมเดลประมวลผลภาพล้มเหลว กรุณาลองรีเฟรชหรือเช็กอินเทอร์เน็ต';
+          })
+          .finally(() => {
+            isProcessingFrame = false;
+          });
       }
 
       ctx.save();
