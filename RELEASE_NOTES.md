@@ -19,6 +19,9 @@
 *   **Thai Game Category Presets**: เพิ่มหมวดเกมภาษาไทยทั่วไปที่เข้าใจง่าย เช่น เลือกมือเอง, ใช้มือข้างที่ต้องฝึก, แตะให้ไว, แตะให้ตรง, ใช้สองมือพร้อมกัน, เอื้อมสูง-ต่ำ, แตะเฉพาะวงกลมแดง, เปลี่ยนกติกาเป็นช่วง, ตรวจรวมหลายด้าน และดูความล้าระหว่างทำซ้ำ
 *   **Clinician-Oriented Game Selection**: แต่ละชุดเกมตั้งเวลา ความเร็ว ความถี่เป้าหมาย และกติกาให้อัตโนมัติ เพื่อแยกการวัดตามความต้องการ เช่น การใช้มือจริง ความไว ความแม่น การใช้สองมือ ช่วงเอื้อม การทำตามกติกา และการเก็บข้อมูลละเอียดสำหรับแพทย์
 *   **MP4-Only Session Recording**: ปรับระบบบันทึกวิดีโอระหว่างทดสอบให้บันทึกเป็น MP4 เท่านั้น และไม่ fallback เป็น WebM อีก หากเบราว์เซอร์ไม่รองรับ MP4 MediaRecorder จะแสดงข้อความแจ้งให้ใช้เบราว์เซอร์ที่รองรับ
+*   **Supabase Clinical Data Storage**: เพิ่ม backend storage mode สำหรับบันทึกข้อมูลผู้ป่วยและผลทดสอบลง Supabase ฟรีผ่าน `SUPABASE_URL` และ `SUPABASE_SERVICE_ROLE_KEY` พร้อม fallback กลับ MongoDB หรือ memory mode ได้
+*   **Data Science Visual Analytics**: เพิ่ม endpoint `/api/analytics/clinical` และแผงภาพข้อมูลใน Dashboard สำหรับดูจำนวนผู้ป่วย รอบทดสอบ กลุ่มเสี่ยงสูง การกระจายความเสี่ยง เกมที่ใช้ทดสอบ และตารางจัดอันดับผู้ป่วยกลุ่มเสี่ยง
+*   **Supabase SQL Schema**: เพิ่มไฟล์ `backend/supabase_schema.sql` สำหรับสร้างตาราง `patients` และ `sessions` พร้อม JSONB fields สำหรับ metrics/raw logs และ indexes สำหรับการวิเคราะห์ข้อมูล
 *   **Dashboard Export Controls**: เพิ่มปุ่ม Export CSV, English PDF Report และปุ่มต่อ session สำหรับ CSV, Raw CSV และ PDF ในตารางประวัติการประเมิน
 *   **Frontend Version Update**: อัปเดต frontend package version เป็น `1.2.0`
 

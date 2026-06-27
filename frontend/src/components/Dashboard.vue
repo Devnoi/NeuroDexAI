@@ -236,6 +236,65 @@
         </div>
       </div>
 
+      <div class="chart-section glass-panel">
+        <h3>ภาพรวมข้อมูลเชิงวิเคราะห์</h3>
+        <p class="chart-subtitle">สรุปข้อมูลจากฐานข้อมูลเพื่อดูแนวโน้มผู้ป่วยกลุ่มเสี่ยง รูปแบบเกมที่ใช้ และการกระจายคะแนนความเสี่ยง</p>
+        <div class="analytics-summary-grid">
+          <div class="analytics-kpi">
+            <span>ผู้ป่วยทั้งหมด</span>
+            <strong>{{ clinicalAnalytics?.totals?.patients || 0 }}</strong>
+          </div>
+          <div class="analytics-kpi">
+            <span>จำนวนรอบทดสอบ</span>
+            <strong>{{ clinicalAnalytics?.totals?.sessions || 0 }}</strong>
+          </div>
+          <div class="analytics-kpi high">
+            <span>กลุ่มเสี่ยงสูง</span>
+            <strong>{{ clinicalAnalytics?.totals?.highRiskPatients || 0 }}</strong>
+          </div>
+          <div class="analytics-kpi moderate">
+            <span>กลุ่มต้องเฝ้าดู</span>
+            <strong>{{ clinicalAnalytics?.totals?.moderateRiskPatients || 0 }}</strong>
+          </div>
+        </div>
+        <div class="analytics-chart-grid">
+          <div class="small-chart-box">
+            <h4>การกระจายกลุ่มเสี่ยง</h4>
+            <canvas ref="riskChartCanvas"></canvas>
+          </div>
+          <div class="small-chart-box">
+            <h4>เกมที่ใช้ทดสอบ</h4>
+            <canvas ref="modeChartCanvas"></canvas>
+          </div>
+        </div>
+        <div class="risk-table-wrapper">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>ผู้ป่วย</th>
+                <th>ข้างที่ต้องฝึก</th>
+                <th>คะแนนเสี่ยง</th>
+                <th>คุณภาพล่าสุด</th>
+                <th>เปลี่ยนแปลง</th>
+                <th>การเลือกใช้มือ</th>
+                <th>ความต่างซ้าย-ขวา</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in topRiskRows" :key="row.patientId">
+                <td>{{ row.name }} ({{ row.patientId }})</td>
+                <td>{{ row.affectedSide === 'left' ? 'ซ้าย' : 'ขวา' }}</td>
+                <td><span class="badge risk-badge">{{ row.riskScore }}</span></td>
+                <td>{{ row.latestAffectedQuality }}%</td>
+                <td>{{ row.qualityDelta }}</td>
+                <td>{{ row.limbSelectionRatio }}%</td>
+                <td>{{ row.asymmetry }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- History Table -->
       <div class="history-section glass-panel">
         <h3>ประวัติบันทึกเซสชัน</h3>
@@ -387,10 +446,17 @@ const patients = ref([]);
 const sessions = ref([]);
 const selectedPatientId = ref('');
 const chartCanvas = ref(null);
+const riskChartCanvas = ref(null);
+const modeChartCanvas = ref(null);
 let chartInstance = null;
+let riskChartInstance = null;
+let modeChartInstance = null;
 
 const clinicalAlert = ref(null);
 const dashboardError = ref('');
+const clinicalAnalytics = ref(null);
+
+const topRiskRows = computed(() => (clinicalAnalytics.value?.patientRiskRows || []).slice(0, 8));
 
 // Left Hand stats averages
 const leftSpeed = computed(() => {
@@ -683,12 +749,14 @@ const loadInitialData = async () => {
     } else {
       renderChart();
     }
+    await fetchClinicalAnalytics();
   } catch (err) {
     console.error('Failed to load dashboard data:', err);
     dashboardError.value = 'ไม่สามารถโหลดข้อมูลแดชบอร์ดจากเซิร์ฟเวอร์ได้ กรุณาตรวจสอบว่า backend กำลังทำงานอยู่';
     patients.value = [];
     sessions.value = [];
     clinicalAlert.value = null;
+    clinicalAnalytics.value = null;
     renderChart();
   }
 };
@@ -729,6 +797,7 @@ const fetchPatientData = async () => {
     }
 
     renderChart();
+    await fetchClinicalAnalytics();
   } catch (err) {
     console.error('Error fetching patient records:', err);
     dashboardError.value = 'ไม่สามารถโหลดประวัติผู้ป่วยรายนี้ได้ กรุณาลองใหม่อีกครั้ง';
@@ -741,6 +810,18 @@ const fetchPatientData = async () => {
 const formatDate = (isoString) => {
   const d = new Date(isoString);
   return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const fetchClinicalAnalytics = async () => {
+  try {
+    const res = await axios.get(`${API_URL}/api/analytics/clinical`);
+    clinicalAnalytics.value = res.data;
+    renderAnalyticsCharts();
+  } catch (err) {
+    console.warn('Clinical analytics endpoint is unavailable:', err);
+    clinicalAnalytics.value = null;
+    renderAnalyticsCharts();
+  }
 };
 
 // Render progress charts
@@ -829,6 +910,62 @@ const renderChart = () => {
       }
     }
   });
+};
+
+const renderAnalyticsCharts = () => {
+  if (riskChartInstance) {
+    riskChartInstance.destroy();
+    riskChartInstance = null;
+  }
+  if (modeChartInstance) {
+    modeChartInstance.destroy();
+    modeChartInstance = null;
+  }
+  if (!clinicalAnalytics.value) return;
+
+  if (riskChartCanvas.value) {
+    const risk = clinicalAnalytics.value.riskDistribution || {};
+    riskChartInstance = new Chart(riskChartCanvas.value.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['เสี่ยงสูง', 'ปานกลาง', 'เฝ้าดู', 'ต่ำ'],
+        datasets: [{
+          data: [risk.high || 0, risk.moderate || 0, risk.watchlist || 0, risk.low || 0],
+          backgroundColor: ['#fb7185', '#fbbf24', '#38bdf8', '#34d399'],
+          borderColor: '#0f172a'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#f8fafc' } } }
+      }
+    });
+  }
+
+  if (modeChartCanvas.value) {
+    const entries = Object.entries(clinicalAnalytics.value.modeCounts || {});
+    modeChartInstance = new Chart(modeChartCanvas.value.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: entries.map(([mode]) => mode),
+        datasets: [{
+          label: 'จำนวนรอบ',
+          data: entries.map(([, count]) => count),
+          backgroundColor: '#2dd4bf'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        },
+        plugins: { legend: { labels: { color: '#f8fafc' } } }
+      }
+    });
+  }
 };
 
 onMounted(() => {
@@ -1202,6 +1339,73 @@ defineExpose({
 .chart-wrapper {
   height: 350px;
   position: relative;
+}
+
+.analytics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.analytics-kpi {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analytics-kpi span {
+  color: hsl(var(--text-muted));
+  font-size: 0.78rem;
+}
+
+.analytics-kpi strong {
+  color: #f8fafc;
+  font-size: 2rem;
+  font-family: 'Outfit', sans-serif;
+}
+
+.analytics-kpi.high strong {
+  color: #fb7185;
+}
+
+.analytics-kpi.moderate strong {
+  color: #fbbf24;
+}
+
+.analytics-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.small-chart-box {
+  min-height: 280px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.45);
+  position: relative;
+}
+
+.small-chart-box h4 {
+  margin: 0 0 10px 0;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+}
+
+.small-chart-box canvas {
+  max-height: 220px;
+}
+
+.risk-table-wrapper {
+  margin-top: 16px;
+  overflow-x: auto;
 }
 
 .history-section {
