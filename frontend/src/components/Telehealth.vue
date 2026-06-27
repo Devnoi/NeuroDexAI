@@ -147,6 +147,76 @@
         </form>
       </div>
     </div>
+
+    <!-- Doctor's Real-Time Kinematics Observation Console -->
+    <div class="doctor-live-monitor glass-panel" style="margin-top: 20px; padding: 18px; border: 1.5px solid rgba(99, 102, 241, 0.45); background: rgba(15, 23, 42, 0.9);">
+      <h3 style="color: #6366f1; margin: 0 0 10px 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+        📡 คอนโซลเฝ้าสังเกตการณ์จลนศาสตร์เรียลไทม์สำหรับแพทย์ (Doctor's Live Session Monitor)
+      </h3>
+      
+      <div v-if="liveTelemetry" class="live-monitor-grid" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+        <!-- Heart Rate & Exertion Gauge -->
+        <div class="monitor-card" style="background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); text-align: center;">
+          <h4 style="margin: 0 0 6px 0; font-size: 0.9rem; color: #f43f5e; display: flex; align-items: center; justify-content: center; gap: 4px;">
+            ❤️ Live Heart Rate
+          </h4>
+          <div style="font-size: 2.2rem; font-weight: bold; color: #ef4444; margin: 8px 0;">
+            {{ liveTelemetry.currentHeartRate }} <span style="font-size: 1rem;">BPM</span>
+          </div>
+          <div style="font-size: 0.8rem; color: #94a3b8;">
+            สถานะ: {{ liveTelemetry.currentHeartRate > 120 ? '🚨 หัวใจเต้นเร็ว/ล้า' : '🟢 ปลอดภัย' }}
+          </div>
+        </div>
+
+        <!-- 3D Finger Z-Depth & Spasticity -->
+        <div class="monitor-card" style="background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);">
+          <h4 style="margin: 0 0 8px 0; font-size: 0.9rem; color: #2dd4bf; text-align: center;">
+            📡 3D Depth & Spasticity
+          </h4>
+          <table style="width: 100%; font-size: 0.8rem; color: #cbd5e1; border-collapse: collapse;">
+            <tbody>
+              <tr>
+                <td style="padding: 4px 0;"><strong>Left Hand:</strong></td>
+                <td style="text-align: right;">Depth: {{ liveTelemetry.leftFingerZ.toFixed(3) }}m | เกร็ง: {{ liveTelemetry.leftHandSpasticity }}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0;"><strong>Right Hand:</strong></td>
+                <td style="text-align: right;">Depth: {{ liveTelemetry.rightFingerZ.toFixed(3) }}m | เกร็ง: {{ liveTelemetry.rightHandSpasticity }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Shoulder ROM & Compensation Alerts -->
+        <div class="monitor-card" style="background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);">
+          <h4 style="margin: 0 0 8px 0; font-size: 0.9rem; color: #38bdf8; text-align: center;">
+            📐 Shoulder ROM & Posture
+          </h4>
+          <table style="width: 100%; font-size: 0.8rem; color: #cbd5e1; border-collapse: collapse;">
+            <tbody>
+              <tr>
+                <td style="padding: 4px 0;"><strong>Left Active ROM:</strong></td>
+                <td style="text-align: right;">{{ liveTelemetry.leftShoulderAngle !== null ? liveTelemetry.leftShoulderAngle + '°' : '--' }}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0;"><strong>Right Active ROM:</strong></td>
+                <td style="text-align: right;">{{ liveTelemetry.rightShoulderAngle !== null ? liveTelemetry.rightShoulderAngle + '°' : '--' }}</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 0;"><strong>Postural Lean:</strong></td>
+                <td style="text-align: right;" :style="{ color: liveTelemetry.isCompensating ? '#ef4444' : '#34d399', fontWeight: liveTelemetry.isCompensating ? 'bold' : 'normal' }">
+                  {{ liveTelemetry.isCompensating ? '🚨 เอียงตัวชดเชย' : 'ปกติ' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div v-else style="text-align: center; color: #64748b; padding: 20px; font-size: 0.9rem; border: 1.5px dashed rgba(255,255,255,0.05); border-radius: 8px;">
+        📡 ยังไม่มีการเปิดการทดสอบประเมิน หรือผู้ป่วยไม่ได้อยู่ในเซสชัน RIT (กำลังรอการส่งสัญญาณชีพและจลนศาสตร์ดิบ...)
+      </div>
+    </div>
   </div>
 </template>
 
@@ -164,6 +234,9 @@ const messages = ref([]);
 const localVideoRef = ref(null);
 const messageLogRef = ref(null);
 let mediaStream = null;
+
+const liveTelemetry = ref(null);
+let telemetryPollIntervalId = null;
 
 const startCall = async () => {
   callActive.value = true;
@@ -266,9 +339,19 @@ const formatTime = (isoString) => {
 
 onMounted(() => {
   loadMessages();
+  telemetryPollIntervalId = setInterval(() => {
+    if (window.__lastLiveTelemetry && (Date.now() - window.__lastLiveTelemetry.timestamp < 3000)) {
+      liveTelemetry.value = window.__lastLiveTelemetry;
+    } else {
+      liveTelemetry.value = null;
+    }
+  }, 100);
 });
 
 onBeforeUnmount(() => {
+  if (telemetryPollIntervalId) {
+    clearInterval(telemetryPollIntervalId);
+  }
   endCall();
 });
 </script>

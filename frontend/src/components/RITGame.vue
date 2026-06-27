@@ -205,12 +205,44 @@
             {{ postureStatus }}
           </span>
         </div>
-        <div class="telemetry-stat">
-          <span class="label">บันทึกวิดีโอ:</span>
-          <span class="value" :class="isRecordingVideo ? 'text-success' : 'text-danger'">
-            {{ recordingStatus }}
+        <div class="telemetry-stat" v-if="bleConnected" style="background: rgba(239, 68, 68, 0.05); padding: 8px; border-radius: 6px; border: 1.5px solid rgba(239, 68, 68, 0.3); margin-top: 8px; margin-bottom: 8px;">
+          <span class="label" style="color: #ef4444; font-weight: bold; display: flex; align-items: center; gap: 4px;">
+            <span style="display: inline-block; animation: heartBeat 0.8s infinite alternate;">❤️</span> ชีพจร (Heart Rate):
+          </span>
+          <span class="value" style="color: #ef4444; font-weight: bold; font-size: 1.25rem;">
+            {{ currentHeartRate }} BPM
+          </span>
+          <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">({{ bleDeviceName }})</div>
+        </div>
+
+        <div class="telemetry-stat" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+          <span class="label">องศาไหล่ (ROM):</span>
+          <span class="value">
+            L: {{ leftShoulderAngle !== null ? leftShoulderAngle + '°' : '--' }} |
+            R: {{ rightShoulderAngle !== null ? rightShoulderAngle + '°' : '--' }}
           </span>
         </div>
+
+        <div class="telemetry-stat">
+          <span class="label">ระยะลึก (3D Z-Depth):</span>
+          <span class="value">
+            L: {{ leftFingerZ.toFixed(3) }}m |
+            R: {{ rightFingerZ.toFixed(3) }}m
+          </span>
+        </div>
+
+        <div class="telemetry-stat">
+          <span class="label">อาการเกร็ง (Spasticity):</span>
+          <span class="value" style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <span :style="{ color: leftHandSpasticityScore > 60 ? '#ef4444' : (leftHandSpasticityScore > 40 ? '#f59e0b' : '#34d399') }">L: {{ leftHandSpasticity }}</span> |
+            <span :style="{ color: rightHandSpasticityScore > 60 ? '#ef4444' : (rightHandSpasticityScore > 40 ? '#f59e0b' : '#34d399') }">R: {{ rightHandSpasticity }}</span>
+          </span>
+        </div>
+
+        <div class="telemetry-stat" v-if="isCompensating" style="background: rgba(239, 68, 68, 0.1); padding: 6px; border-radius: 6px; border: 1px solid #ef4444; margin-top: 4px; margin-bottom: 4px;">
+          <span class="label" style="color: #ef4444; font-weight: bold;">⚠️ ตรวจพบการเอียงชดเชย!</span>
+        </div>
+
         <div class="telemetry-stat">
           <span class="label">สถานะเป้าหมาย:</span>
           <span class="value highlight-state">
@@ -1620,75 +1652,29 @@ const startCanvasLoop = () => {
       ctx.restore();
     }
 
-    if (poseDetected.value) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-      ctx.lineWidth = 1;
-      ctx.roundRect(CANVAS_WIDTH - 222, 16, 206, 34, 8);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#bae6fd';
-      ctx.font = "bold 13px 'Inter', sans-serif";
-      ctx.textAlign = 'left';
-      ctx.fillText(`ท่าทาง: ${postureStatus.value}`, CANVAS_WIDTH - 206, 38);
-      ctx.restore();
-    }
-
-    if (leftHandDetected.value || rightHandDetected.value) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-      ctx.strokeStyle = 'rgba(45, 212, 191, 0.45)';
-      ctx.lineWidth = 1;
-      ctx.roundRect(CANVAS_WIDTH - 222, 56, 206, 94, 8);
-      ctx.fill();
-      ctx.stroke();
-      
-      ctx.fillStyle = '#2dd4bf';
-      ctx.font = "bold 11px 'Inter', sans-serif";
-      ctx.fillText('📡 3D DEPTH & SPASTICITY', CANVAS_WIDTH - 208, 72);
-      
-      ctx.font = "11px 'Inter', sans-serif";
-      if (leftHandDetected.value) {
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillText(`L Z-Depth: ${leftFingerZ.value.toFixed(3)}`, CANVAS_WIDTH - 208, 90);
-        ctx.fillStyle = leftHandSpasticityScore.value > 60 ? '#ef4444' : (leftHandSpasticityScore.value > 40 ? '#f59e0b' : '#34d399');
-        ctx.fillText(`L เกร็ง: ${leftHandSpasticity.value}`, CANVAS_WIDTH - 208, 104);
-      } else {
-        ctx.fillStyle = '#64748b';
-        ctx.fillText('L Hand: ไม่พบการสแกน', CANVAS_WIDTH - 208, 97);
-      }
-      
-      if (rightHandDetected.value) {
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillText(`R Z-Depth: ${rightFingerZ.value.toFixed(3)}`, CANVAS_WIDTH - 208, 122);
-        ctx.fillStyle = rightHandSpasticityScore.value > 60 ? '#ef4444' : (rightHandSpasticityScore.value > 40 ? '#f59e0b' : '#34d399');
-        ctx.fillText(`R เกร็ง: ${rightHandSpasticity.value}`, CANVAS_WIDTH - 208, 136);
-      } else {
-        ctx.fillStyle = '#64748b';
-        ctx.fillText('R Hand: ไม่พบการสแกน', CANVAS_WIDTH - 208, 129);
-      }
-      ctx.restore();
-    }
-
-    if (bleConnected.value) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
-      ctx.lineWidth = 1;
-      ctx.roundRect(CANVAS_WIDTH - 222, 156, 206, 44, 8);
-      ctx.fill();
-      ctx.stroke();
-      
-      ctx.fillStyle = '#ef4444';
-      ctx.font = "bold 11px 'Inter', sans-serif";
-      ctx.fillText(`💓 HEART RATE`, CANVAS_WIDTH - 208, 172);
-      
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = "bold 11px 'Inter', sans-serif";
-      ctx.fillText(`${currentHeartRate.value} BPM`, CANVAS_WIDTH - 208, 188);
-      ctx.restore();
-    }
+    // Broadcast live telemetry data to window object for doctor observation console
+    window.__lastLiveTelemetry = {
+      timestamp: Date.now(),
+      postureStatus: postureStatus.value,
+      isCompensating: isCompensating.value,
+      leftFingerZ: leftFingerZ.value,
+      leftHandSpasticityScore: leftHandSpasticityScore.value,
+      leftHandSpasticity: leftHandSpasticity.value,
+      leftHandDetected: leftHandDetected.value,
+      rightFingerZ: rightFingerZ.value,
+      rightHandSpasticityScore: rightHandSpasticityScore.value,
+      rightHandSpasticity: rightHandSpasticity.value,
+      rightHandDetected: rightHandDetected.value,
+      leftShoulderAngle: leftShoulderAngle.value,
+      rightShoulderAngle: rightShoulderAngle.value,
+      currentHeartRate: currentHeartRate.value,
+      bleConnected: bleConnected.value,
+      bleDeviceName: bleDeviceName.value,
+      gameMode: gameMode.value,
+      score: score.value,
+      timeLeft: timeLeft.value,
+      targetsHit: targetsHit.value
+    };
 
     // 3. Draw Left & Right Rest Zones
     ctx.save();
