@@ -2326,10 +2326,13 @@ onUnmounted(() => {
 
 .hidden-video {
   position: absolute;
-  left: -9999px;
-  top: -9999px;
+  top: 0;
+  left: 0;
   width: 640px;
   height: 480px;
+  opacity: 0.01;
+  pointer-events: none;
+  z-index: -1;
 }
 
 /* Overlays on Canvas */
