@@ -14,8 +14,15 @@ const rawLogSchema = new mongoose.Schema({
   },
   leftFingerX: { type: Number, default: 0 },
   leftFingerY: { type: Number, default: 0 },
+  leftFingerZ: { type: Number, default: 0 },
   rightFingerX: { type: Number, default: 0 },
   rightFingerY: { type: Number, default: 0 },
+  rightFingerZ: { type: Number, default: 0 },
+  leftSpasticityScore: { type: Number, default: 0 },
+  rightSpasticityScore: { type: Number, default: 0 },
+  leftShoulderAngle: { type: Number, default: null },
+  rightShoulderAngle: { type: Number, default: null },
+  compensatoryMovement: { type: Boolean, default: false },
   usedHand: {
     type: String,
     enum: ['left', 'right', 'none', 'both'],
@@ -46,7 +53,7 @@ const sessionSchema = new mongoose.Schema({
   },
   gameMode: {
     type: String,
-    enum: ['random', 'forced', 'bilateral', 'range_of_motion', 'cognitive_match'],
+    enum: ['random', 'forced', 'bilateral', 'range_of_motion', 'cognitive_match', 'diagnostic'],
     default: 'random'
   },
   metrics: {

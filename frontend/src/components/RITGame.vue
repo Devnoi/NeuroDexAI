@@ -84,6 +84,9 @@
             <label class="radio-label" :class="{ active: gameMode === 'cognitive_match' }">
               <input type="radio" value="cognitive_match" v-model="gameMode"> 🧠 โหมดสลับสีสแกนสมอง (Cognitive Matching - เปลี่ยนกฎเป้าหมายระหว่างเล่น)
             </label>
+            <label class="radio-label" :class="{ active: gameMode === 'diagnostic' }">
+              <input type="radio" value="diagnostic" v-model="gameMode"> 📊 โหมดวิเคราะห์เชิงลึกทางการแพทย์ (Clinical Diagnostics - บันทึก Z-depth, อาการเกร็ง และสรีระไหล่ 3D)
+            </label>
           </div>
         </div>
 
@@ -455,6 +458,7 @@ const activeCognitiveRule = ref('red_circle');
 // Shoulder flexion angles
 const leftShoulderAngle = ref(null);
 const rightShoulderAngle = ref(null);
+const isCompensating = ref(false);
 
 const calculateShoulderAngle = (side) => {
   if (!poseLandmarks.value || poseLandmarks.value.length === 0) return null;
@@ -823,6 +827,19 @@ const updatePostureStatus = () => {
     postureStatus.value = 'นั่งอยู่';
   } else {
     postureStatus.value = 'กำลังจัดท่าทาง';
+  }
+
+  // Detect shoulder tilt (compensation check)
+  if (leftShoulder && rightShoulder) {
+    const shoulderTilt = Math.abs(leftShoulder.y - rightShoulder.y);
+    if (shoulderTilt > 0.08) {
+      isCompensating.value = true;
+      postureStatus.value += ' (ชดเชยไหล่เอียง)';
+    } else {
+      isCompensating.value = false;
+    }
+  } else {
+    isCompensating.value = false;
   }
 };
 
@@ -1320,19 +1337,21 @@ const spawnTarget = () => {
   if (gameState.value !== 'playing' || activeTarget.value) return;
 
   let requiredHand = 'any';
-  if (gameMode.value === 'forced') {
-    requiredHand = patientForm.affectedSide;
-  } else if (gameMode.value === 'bilateral') {
-    requiredHand = 'both';
-  }
-  
   let side = 'any';
   let spawnX = 0;
   let spawnY = 0;
   let vx = 0;
   let vy = 0;
   
-  if (gameMode.value === 'bilateral') {
+  if (gameMode.value === 'forced') {
+    requiredHand = patientForm.affectedSide;
+    side = requiredHand;
+    spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
+    spawnY = Math.random() * (CANVAS_HEIGHT - 220) + 80;
+    vx = side === 'left' ? currentTargetSpeed.value : -currentTargetSpeed.value;
+    vy = 0;
+  } else if (gameMode.value === 'bilateral') {
+    requiredHand = 'both';
     side = 'center';
     spawnX = CANVAS_WIDTH / 2;
     spawnY = -targetRadius;
@@ -1342,10 +1361,40 @@ const spawnTarget = () => {
     requiredHand = Math.random() > 0.5 ? 'left' : 'right';
     side = requiredHand;
     spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
-    // Spawn at extreme heights
     spawnY = Math.random() > 0.5 ? (Math.random() * 40 + 40) : (Math.random() * 40 + CANVAS_HEIGHT - 130);
     vx = side === 'left' ? currentTargetSpeed.value * 0.8 : -currentTargetSpeed.value * 0.8;
     vy = 0;
+  } else if (gameMode.value === 'diagnostic') {
+    const randType = Math.floor(Math.random() * 4);
+    if (randType === 0) { // Forced style
+      requiredHand = patientForm.affectedSide;
+      side = requiredHand;
+      spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
+      spawnY = Math.random() * (CANVAS_HEIGHT - 220) + 80;
+      vx = side === 'left' ? currentTargetSpeed.value : -currentTargetSpeed.value;
+      vy = 0;
+    } else if (randType === 1) { // Bilateral style
+      requiredHand = 'both';
+      side = 'center';
+      spawnX = CANVAS_WIDTH / 2;
+      spawnY = -targetRadius;
+      vx = 0;
+      vy = currentTargetSpeed.value * 0.75;
+    } else if (randType === 2) { // ROM style
+      requiredHand = Math.random() > 0.5 ? 'left' : 'right';
+      side = requiredHand;
+      spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
+      spawnY = Math.random() > 0.5 ? (Math.random() * 40 + 40) : (Math.random() * 40 + CANVAS_HEIGHT - 130);
+      vx = side === 'left' ? currentTargetSpeed.value * 0.8 : -currentTargetSpeed.value * 0.8;
+      vy = 0;
+    } else { // Cognitive style
+      requiredHand = 'any';
+      side = Math.random() > 0.5 ? 'left' : 'right';
+      spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
+      spawnY = Math.random() * (CANVAS_HEIGHT - 220) + 80;
+      vx = side === 'left' ? currentTargetSpeed.value : -currentTargetSpeed.value;
+      vy = 0;
+    }
   } else {
     side = requiredHand === 'any' ? (Math.random() > 0.5 ? 'left' : 'right') : requiredHand;
     spawnX = side === 'left' ? -targetRadius : CANVAS_WIDTH + targetRadius;
@@ -1826,10 +1875,17 @@ const startCanvasLoop = () => {
           targetColor: logTarget ? logTarget.color : 'none',
           isCorrectTarget: logTarget ? logTarget.isCorrectTarget : true,
           requiredHand: logTarget ? logTarget.requiredHand : 'any',
-          leftFingerX: leftHandDetected.value ? Math.round(leftFingerCoords.x) : 0,
+           leftFingerX: leftHandDetected.value ? Math.round(leftFingerCoords.x) : 0,
           leftFingerY: leftHandDetected.value ? Math.round(leftFingerCoords.y) : 0,
+          leftFingerZ: leftHandDetected.value ? Number(leftFingerZ.value.toFixed(4)) : 0,
           rightFingerX: rightHandDetected.value ? Math.round(rightFingerCoords.x) : 0,
           rightFingerY: rightHandDetected.value ? Math.round(rightFingerCoords.y) : 0,
+          rightFingerZ: rightHandDetected.value ? Number(rightFingerZ.value.toFixed(4)) : 0,
+          leftSpasticityScore: leftHandDetected.value ? leftHandSpasticityScore.value : 0,
+          rightSpasticityScore: rightHandDetected.value ? rightHandSpasticityScore.value : 0,
+          leftShoulderAngle: leftShoulderAngle.value,
+          rightShoulderAngle: rightShoulderAngle.value,
+          compensatoryMovement: isCompensating.value,
           usedHand: detectedHandHit !== 'none' ? detectedHandHit : 'none',
           postureStatus: postureStatus.value,
           state: stateMachineState.value

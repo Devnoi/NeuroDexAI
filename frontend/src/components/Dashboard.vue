@@ -207,7 +207,7 @@
                   <td>{{ sess.patientId }}</td>
                   <td>
                     <span class="badge mode-badge">
-                      {{ sess.gameMode === 'random' ? 'โหมดสุ่ม' : (sess.gameMode === 'forced' ? 'โหมดบังคับ' : (sess.gameMode === 'bilateral' ? 'สองมือ' : (sess.gameMode === 'range_of_motion' ? 'ข้อไหล่' : 'สลับสี'))) }}
+                      {{ sess.gameMode === 'random' ? 'โหมดสุ่ม' : (sess.gameMode === 'forced' ? 'โหมดบังคับ' : (sess.gameMode === 'bilateral' ? 'สองมือ' : (sess.gameMode === 'range_of_motion' ? 'ข้อไหล่' : (sess.gameMode === 'diagnostic' ? 'วินิจฉัยเชิงลึก' : 'สลับสี')))) }}
                     </span>
                   </td>
                   <td>
@@ -230,7 +230,44 @@
                 <tr v-if="expandedSessionId === sess.sessionId" class="expandable-details-row">
                   <td colspan="10" class="details-expanded-cell">
                     <div class="details-expanded-container">
-                      <h4>📊 รายละเอียดจลนศาสตร์เชิงลึกสำหรับเซสชันนี้ (Detailed Kinematic Diagnostics)</h4>
+                      <!-- Clinical Diagnosis Report Panel -->
+                      <div v-if="sess.gameMode === 'diagnostic' && getDiagnosticSummary(sess)" class="diagnostic-report-card glass-panel" style="margin-bottom: 20px; padding: 18px; border: 1.5px solid rgba(45, 212, 191, 0.45); background: rgba(15, 23, 42, 0.9);">
+                        <h4 style="color: #2dd4bf; margin: 0 0 12px 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                          🩺 รายงานการวินิจฉัยและสถิติจลนศาสตร์เชิงลึก (Clinical Diagnostics Report)
+                        </h4>
+                        
+                        <div class="diagnostic-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px;">
+                          <div class="diag-col" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                            <h5 style="color: #38bdf8; margin: 0 0 8px 0; font-size: 0.9rem;">📡 มิติจลนศาสตร์ 3 มิติ (3D Kinematic Profile)</h5>
+                            <ul style="list-style-type: none; padding: 0; margin: 0; font-size: 0.85rem; display: flex; flex-direction: column; gap: 6px;">
+                              <li><strong>องศาข้อไหล่ซ้าย (Left Shoulder Range):</strong> {{ getDiagnosticSummary(sess).avgLeftShoulder }}°</li>
+                              <li><strong>องศาข้อไหล่ขวา (Right Shoulder Range):</strong> {{ getDiagnosticSummary(sess).avgRightShoulder }}°</li>
+                              <li><strong>ค่าเฉลี่ยระยะแนวลึกแกน Z มือซ้าย:</strong> {{ getDiagnosticSummary(sess).avgLeftZ }} m</li>
+                              <li><strong>ค่าเฉลี่ยระยะแนวลึกแกน Z มือขวา:</strong> {{ getDiagnosticSummary(sess).avgRightZ }} m</li>
+                            </ul>
+                          </div>
+
+                          <div class="diag-col" style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                            <h5 style="color: #c084fc; margin: 0 0 8px 0; font-size: 0.9rem;">💪 ภาวะตึงเกร็งและการขยับชดเชย (Rigidity & Compensation)</h5>
+                            <ul style="list-style-type: none; padding: 0; margin: 0; font-size: 0.85rem; display: flex; flex-direction: column; gap: 6px;">
+                              <li><strong>ระดับการเกร็งเฉลี่ยมือซ้าย:</strong> {{ getDiagnosticSummary(sess).avgLeftSpas }}% (สูงสุด: {{ getDiagnosticSummary(sess).leftSpasMax }}%)</li>
+                              <li><strong>ระดับการเกร็งเฉลี่ยมือขวา:</strong> {{ getDiagnosticSummary(sess).avgRightSpas }}% (สูงสุด: {{ getDiagnosticSummary(sess).rightSpasMax }}%)</li>
+                              <li><strong>ความถี่การขยับไหล่/ลำตัวเอียงชดเชย:</strong> <span :style="{ color: getDiagnosticSummary(sess).compPercentage > 15 ? '#f43f5e' : '#34d399' }">{{ getDiagnosticSummary(sess).compPercentage }}% ของเซสชัน</span></li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div class="diagnostic-recommendations" style="background: rgba(245, 158, 11, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25);">
+                          <h5 style="color: #f59e0b; margin: 0 0 6px 0; font-size: 0.9rem;">🩺 แผนการฟื้นฟูและข้อแนะนำการแพทย์ (Clinical Guidance)</h5>
+                          <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 4px; color: #f1f5f9;">
+                            <li v-for="(rec, rIdx) in getDiagnosticSummary(sess).recommendations" :key="rIdx">
+                              {{ rec }}
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+
+                      <h4>📊 สถิติจลนศาสตร์มาตรฐานเพิ่มเติมสำหรับเซสชันนี้</h4>
                       <div class="details-grid">
                         <div class="details-column">
                           <h5>มือซ้าย (Left Hand)</h5>
@@ -363,6 +400,92 @@ const formatRisk = (risk) => {
   if (risk === 'moderate') return 'ปานกลาง';
   if (risk === 'low') return 'ต่ำ';
   return 'ยังไม่พอประเมิน';
+};
+
+const getDiagnosticSummary = (sess) => {
+  if (!sess.rawLogs || sess.rawLogs.length === 0) return null;
+  
+  let leftSpasSum = 0, leftSpasCount = 0, leftSpasMax = 0;
+  let rightSpasSum = 0, rightSpasCount = 0, rightSpasMax = 0;
+  let leftShoulderSum = 0, leftShoulderCount = 0;
+  let rightShoulderSum = 0, rightShoulderCount = 0;
+  let compCount = 0;
+  let leftZSum = 0, leftZCount = 0;
+  let rightZSum = 0, rightZCount = 0;
+  
+  sess.rawLogs.forEach(log => {
+    if (log.leftSpasticityScore !== undefined && log.leftFingerX !== 0) {
+      leftSpasSum += log.leftSpasticityScore;
+      leftSpasCount++;
+      if (log.leftSpasticityScore > leftSpasMax) leftSpasMax = log.leftSpasticityScore;
+    }
+    if (log.rightSpasticityScore !== undefined && log.rightFingerX !== 0) {
+      rightSpasSum += log.rightSpasticityScore;
+      rightSpasCount++;
+      if (log.rightSpasticityScore > rightSpasMax) rightSpasMax = log.rightSpasticityScore;
+    }
+    if (log.leftShoulderAngle !== undefined && log.leftShoulderAngle !== null) {
+      leftShoulderSum += log.leftShoulderAngle;
+      leftShoulderCount++;
+    }
+    if (log.rightShoulderAngle !== undefined && log.rightShoulderAngle !== null) {
+      rightShoulderSum += log.rightShoulderAngle;
+      rightShoulderCount++;
+    }
+    if (log.leftFingerZ !== undefined && log.leftFingerX !== 0) {
+      leftZSum += log.leftFingerZ;
+      leftZCount++;
+    }
+    if (log.rightFingerZ !== undefined && log.rightFingerX !== 0) {
+      rightZSum += log.rightFingerZ;
+      rightZCount++;
+    }
+    if (log.compensatoryMovement === true) {
+      compCount++;
+    }
+  });
+  
+  const avgLeftSpas = leftSpasCount > 0 ? Math.round(leftSpasSum / leftSpasCount) : 0;
+  const avgRightSpas = rightSpasCount > 0 ? Math.round(rightSpasSum / rightSpasCount) : 0;
+  const avgLeftShoulder = leftShoulderCount > 0 ? Math.round(leftShoulderSum / leftShoulderCount) : 0;
+  const avgRightShoulder = rightShoulderCount > 0 ? Math.round(rightShoulderSum / rightShoulderCount) : 0;
+  const avgLeftZ = leftZCount > 0 ? (leftZSum / leftZCount).toFixed(3) : '0.000';
+  const avgRightZ = rightZCount > 0 ? (rightZSum / rightZCount).toFixed(3) : '0.000';
+  
+  const totalFrames = sess.rawLogs.length;
+  const compPercentage = totalFrames > 0 ? Math.round((compCount / totalFrames) * 100) : 0;
+  
+  const currentPatient = patients.value.find(p => p.patientId === sess.patientId);
+  const affectedSide = currentPatient?.affectedSide || 'right';
+  const affectedSpas = affectedSide === 'left' ? avgLeftSpas : avgRightSpas;
+  const selectionRatio = sess.metrics?.limbSelectionRatio || 0;
+  
+  let recs = [];
+  if (affectedSpas > 55) {
+    recs.push("🚨 ตรวจพบภาวะกล้ามเนื้ออ่อนแรงเกร็งตัวเด่นชัด (Spasticity) แนะนำปรึกษาแพทย์ร่วมกับบำบัดผ่อนคลายและลดความเร็วการฝึก");
+  }
+  if (selectionRatio < 28 && affectedSpas < 45) {
+    recs.push("💡 อัตราใช้มืออ่อนแรงต่ำมากเข้าข่าย Learned Non-Use แนะนำรักษาโดยการจำกัดข้างดีเพื่อบังคับข้างอ่อนแรง (CIMT)");
+  }
+  if (compPercentage > 15) {
+    recs.push("⚠️ พฤติกรรมไหล่เอียงชดเชยสูง แนะนำปรับระยะห่างหรือล็อกท่าทางผู้ป่วยให้หลังพิงพนักตรงเพื่อเลี่ยงการบาดเจ็บ");
+  }
+  if (recs.length === 0) {
+    recs.push("✅ การฝึกควบคุมสรีระและข้อไหล่อยู่ในเกณฑ์ดี แนะนำให้ออกกำลังฟื้นฟูต่อเนื่องวันละ 15-20 นาที");
+  }
+  
+  return {
+    avgLeftSpas,
+    avgRightSpas,
+    leftSpasMax,
+    rightSpasMax,
+    avgLeftShoulder,
+    avgRightShoulder,
+    avgLeftZ,
+    avgRightZ,
+    compPercentage,
+    recommendations: recs
+  };
 };
 
 const expandedSessionId = ref(null);
