@@ -23,7 +23,6 @@ const rawLogSchema = new mongoose.Schema({
   leftShoulderAngle: { type: Number, default: null },
   rightShoulderAngle: { type: Number, default: null },
   compensatoryMovement: { type: Boolean, default: false },
-  heartRate: { type: Number, default: 0 },
   usedHand: {
     type: String,
     enum: ['left', 'right', 'none', 'both'],

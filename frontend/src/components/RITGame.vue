@@ -100,37 +100,7 @@
           </select>
         </div>
 
-        <div class="form-group" style="background: rgba(239, 68, 68, 0.05); padding: 14px; border: 1.5px dashed rgba(239, 68, 68, 0.35); border-radius: 8px; margin-top: 15px; margin-bottom: 15px;">
-          <label style="color: #f87171; display: flex; align-items: center; gap: 6px; font-weight: bold; margin-bottom: 4px;">
-            💓 วัดชีพจรเต้นหัวใจ (Heart Rate via Apple Watch / BLE Device)
-          </label>
-          <p style="font-size: 0.8rem; color: #94a3b8; margin: 0 0 10px 0;">เชื่อมต่ออุปกรณ์วัดชีพจร Bluetooth แบบเรียลไทม์ เพื่อเฝ้าระวังอัตราการเต้นของหัวใจระหว่างการฝึกฟื้นฟู</p>
-          
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <button class="btn-primary" @click="connectHeartRate" style="background: #dc2626; border: none; font-size: 0.85rem; padding: 8px 16px; margin: 0; cursor: pointer;">
-              {{ bleConnected ? '✅ ' + bleDeviceName : '🔗 เชื่อมต่อผ่านบลูทูธ (Connect BLE)' }}
-            </button>
-            <div v-if="bleConnected" style="font-weight: bold; color: #ef4444; font-size: 1.1rem; display: flex; align-items: center; gap: 5px;">
-              <span style="display: inline-block; animation: heartBeat 1s infinite alternate; font-size: 1.25rem;">❤️</span>
-              <span>{{ currentHeartRate }} BPM</span>
-            </div>
-          </div>
-          <div v-if="bleError" style="color: #f87171; font-size: 0.75rem; margin-top: 6px;">
-            {{ bleError }}
-          </div>
-        </div>
-
         <div class="setup-controls">
-          <!-- Camera Selector if > 1 camera detected -->
-          <div v-if="videoDevices.length > 1" style="margin-bottom: 16px; text-align: left;">
-            <label style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500;">🔌 พบอุปกรณ์หลายมุมกล้อง กรุณาเลือกมุมกล้องประเมิน:</label>
-            <select v-model="selectedCameraId" @change="switchCamera" style="width: 100%; background: #0f172a; color: white; border: 1.5px solid #334155; padding: 10px; border-radius: 8px; font-size: 0.85rem; outline: none; cursor: pointer;">
-              <option v-for="device in videoDevices" :key="device.deviceId" :value="device.deviceId">
-                {{ device.label || `กล้องเสริม ${videoDevices.indexOf(device) + 1}` }}
-              </option>
-            </select>
-          </div>
-          
           <button class="btn-primary" @click="startCalibration" :disabled="!patientForm.patientId || !patientForm.name">
             เริ่มการเชื่อมต่อกล้องและโมเดลประมวลผล
           </button>
@@ -140,7 +110,8 @@
 
     <!-- Calibration / Testing Screen -->
     <div v-show="gameState === 'calibrating' || gameState === 'playing'" class="arena-wrapper">
-      <video ref="videoElement" class="hidden-video" width="640" height="480" autoplay playsinline muted></video>
+      <!-- Hidden Video Element for MediaPipe -->
+      <video ref="videoElement" class="hidden-video" autoplay playsinline muted></video>
 
       <!-- Main Interaction Canvas -->
       <div class="canvas-container">
@@ -172,16 +143,6 @@
           <p class="highlight" v-else-if="leftHandDetected && rightHandDetected">ตรวจจับพบมือทั้งสองข้างแล้ว! กรุณาวางนิ้วชี้ซ้ายในโซนพักซ้าย และนิ้วชี้ขวาในโซนพักขวาเพื่อเริ่มทดสอบ</p>
           <p class="warning" v-else>กำลังรอการตรวจจับมือและสรีระ (มือซ้าย: {{ leftHandDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }}, มือขวา: {{ rightHandDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }}, สรีระ: {{ poseDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }})...</p>
           <p class="subtitle" v-if="leftHandDetected && rightHandDetected && autoStartCountdown === 0">ระบบจะนับถอยหลังทันทีเมื่อวางนิ้วชี้ทั้งสองข้างในโซนพักถูกต้อง</p>
-          
-          <!-- Skip Calibration Actions -->
-          <div style="margin-top: 22px; display: flex; gap: 14px; justify-content: center; width: 100%;">
-            <button class="btn-primary" @click="startGame" style="background: #2563eb; border: none; padding: 10px 22px; border-radius: 6px; font-weight: bold; cursor: pointer; color: white;">
-              ⏩ ข้ามการปรับเทียบและเริ่มการทดสอบ (Skip to Test)
-            </button>
-            <button class="btn-secondary" @click="abortSession" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); padding: 10px 22px; border-radius: 6px; font-weight: bold; cursor: pointer; color: white;">
-              กลับไปตั้งค่าใหม่
-            </button>
-          </div>
         </div>
       </div>
 
@@ -224,44 +185,12 @@
             {{ postureStatus }}
           </span>
         </div>
-        <div class="telemetry-stat" v-if="bleConnected" style="background: rgba(239, 68, 68, 0.05); padding: 8px; border-radius: 6px; border: 1.5px solid rgba(239, 68, 68, 0.3); margin-top: 8px; margin-bottom: 8px;">
-          <span class="label" style="color: #ef4444; font-weight: bold; display: flex; align-items: center; gap: 4px;">
-            <span style="display: inline-block; animation: heartBeat 0.8s infinite alternate;">❤️</span> ชีพจร (Heart Rate):
-          </span>
-          <span class="value" style="color: #ef4444; font-weight: bold; font-size: 1.25rem;">
-            {{ currentHeartRate }} BPM
-          </span>
-          <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 2px;">({{ bleDeviceName }})</div>
-        </div>
-
-        <div class="telemetry-stat" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
-          <span class="label">องศาไหล่ (ROM):</span>
-          <span class="value">
-            L: {{ leftShoulderAngle !== null ? leftShoulderAngle + '°' : '--' }} |
-            R: {{ rightShoulderAngle !== null ? rightShoulderAngle + '°' : '--' }}
-          </span>
-        </div>
-
         <div class="telemetry-stat">
-          <span class="label">ระยะลึก (3D Z-Depth):</span>
-          <span class="value">
-            L: {{ leftFingerZ.toFixed(3) }}m |
-            R: {{ rightFingerZ.toFixed(3) }}m
+          <span class="label">บันทึกวิดีโอ:</span>
+          <span class="value" :class="isRecordingVideo ? 'text-success' : 'text-danger'">
+            {{ recordingStatus }}
           </span>
         </div>
-
-        <div class="telemetry-stat">
-          <span class="label">อาการเกร็ง (Spasticity):</span>
-          <span class="value" style="display: flex; gap: 6px; flex-wrap: wrap;">
-            <span :style="{ color: leftHandSpasticityScore > 60 ? '#ef4444' : (leftHandSpasticityScore > 40 ? '#f59e0b' : '#34d399') }">L: {{ leftHandSpasticity }}</span> |
-            <span :style="{ color: rightHandSpasticityScore > 60 ? '#ef4444' : (rightHandSpasticityScore > 40 ? '#f59e0b' : '#34d399') }">R: {{ rightHandSpasticity }}</span>
-          </span>
-        </div>
-
-        <div class="telemetry-stat" v-if="isCompensating" style="background: rgba(239, 68, 68, 0.1); padding: 6px; border-radius: 6px; border: 1px solid #ef4444; margin-top: 4px; margin-bottom: 4px;">
-          <span class="label" style="color: #ef4444; font-weight: bold;">⚠️ ตรวจพบการเอียงชดเชย!</span>
-        </div>
-
         <div class="telemetry-stat">
           <span class="label">สถานะเป้าหมาย:</span>
           <span class="value highlight-state">
@@ -277,17 +206,7 @@
           <div class="progress-bar-fill" :style="{ width: `${(60 - timeLeft) / 60 * 100}%` }"></div>
         </div>
 
-        <!-- Camera Selector in Sidebar (Only shown if > 1 camera is connected) -->
-        <div v-if="videoDevices.length > 1" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; text-align: left; width: 100%;">
-          <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500;">🔄 สลับมุมกล้องประเมิน:</label>
-          <select v-model="selectedCameraId" @change="switchCamera" style="width: 100%; background: #0f172a; color: white; border: 1.5px solid #334155; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; outline: none; cursor: pointer;">
-            <option v-for="device in videoDevices" :key="device.deviceId" :value="device.deviceId">
-              {{ device.label || `กล้องตัวที่ ${videoDevices.indexOf(device) + 1}` }}
-            </option>
-          </select>
-        </div>
-
-        <button class="btn-secondary abort-btn" @click="abortSession" style="margin-top: 12px;">
+        <button class="btn-secondary abort-btn" @click="abortSession">
           ยกเลิกการประเมิน
         </button>
       </div>
@@ -460,10 +379,8 @@ let targetSpawnTimerId = null;
 let difficultyScalerIntervalId = null;
 let autoStartTimerId = null;
 let lastResolvedTarget = null;
-let isProcessingHands = false;
-let isProcessingPose = false;
-let lastHandsProcessTime = 0;
-let lastPoseProcessTime = 0;
+let isProcessingFrame = false;
+let lastModelProcessTime = 0;
 let mediaRecorder = null;
 let recordedChunks = [];
 let currentRecordingUrl = null;
@@ -492,8 +409,6 @@ const modelError = ref('');
 const postureStatus = ref('รอตรวจจับท่าทาง');
 const recordingStatus = ref('ยังไม่เริ่มบันทึก');
 const isRecordingVideo = ref(false);
-const videoDevices = ref([]);
-const selectedCameraId = ref('');
 
 const calculateHandSpasticity = (landmarks) => {
   if (!landmarks || landmarks.length < 21) return { score: 0, status: 'ปกติ' };
@@ -544,77 +459,6 @@ const activeCognitiveRule = ref('red_circle');
 const leftShoulderAngle = ref(null);
 const rightShoulderAngle = ref(null);
 const isCompensating = ref(false);
-
-// Bluetooth Heart Rate (BPM) telemetry state
-const currentHeartRate = ref(0);
-const bleConnected = ref(false);
-const bleDeviceName = ref('');
-const bleError = ref('');
-let bleCharacteristic = null;
-let bleDevice = null;
-let hrSimulatorIntervalId = null;
-
-const connectHeartRate = async () => {
-  bleError.value = '';
-  if (!navigator.bluetooth) {
-    bleError.value = 'เบราว์เซอร์ไม่รองรับ Bluetooth (เปิดโปรแกรมจำลอง)';
-    startHeartRateSimulator();
-    return;
-  }
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: ['heart_rate'] }]
-    });
-    bleDeviceName.value = device.name || 'Bluetooth Heart Rate Monitor';
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService('heart_rate');
-    const characteristic = await service.getCharacteristic('heart_rate_measurement');
-    
-    bleCharacteristic = characteristic;
-    bleDevice = device;
-    
-    await characteristic.startNotifications();
-    characteristic.addEventListener('characteristicvaluechanged', handleHeartRateNotification);
-    
-    bleConnected.value = true;
-    bleError.value = '';
-    speakText("เชื่อมต่อเครื่องวัดชีพจรสำเร็จค่ะ");
-  } catch (err) {
-    console.error("BLE connection failed:", err);
-    bleError.value = 'เชื่อมต่อเครื่องวัดชีพจรไม่ได้: ' + err.message;
-    startHeartRateSimulator();
-  }
-};
-
-const handleHeartRateNotification = (event) => {
-  const value = event.target.value;
-  const flags = value.getUint8(0);
-  const rate16Bits = flags & 0x01;
-  let heartRate = 0;
-  if (rate16Bits) {
-    heartRate = value.getUint16(1, true);
-  } else {
-    heartRate = value.getUint8(1);
-  }
-  currentHeartRate.value = heartRate;
-};
-
-const startHeartRateSimulator = () => {
-  bleConnected.value = true;
-  bleDeviceName.value = 'Apple Watch (Simulated BLE)';
-  currentHeartRate.value = 72;
-  
-  if (hrSimulatorIntervalId) clearInterval(hrSimulatorIntervalId);
-  hrSimulatorIntervalId = setInterval(() => {
-    if (gameState.value === 'playing') {
-      const targetRate = 80 + Math.round(Math.sin(Date.now() / 6000) * 15 + Math.random() * 6);
-      currentHeartRate.value = Math.max(70, Math.min(130, targetRate));
-    } else {
-      const targetRate = 72 + Math.round(Math.sin(Date.now() / 15000) * 3 + Math.random() * 2);
-      currentHeartRate.value = Math.max(60, Math.min(85, targetRate));
-    }
-  }, 1000);
-};
 
 const calculateShoulderAngle = (side) => {
   if (!poseLandmarks.value || poseLandmarks.value.length === 0) return null;
@@ -813,7 +657,7 @@ const POSE_LANDMARK_LABELS = {
 const toCanvasPoint = (landmark) => ({
   x: (1 - landmark.x) * CANVAS_WIDTH,
   y: landmark.y * CANVAS_HEIGHT,
-  visible: landmark.visibility === undefined || landmark.visibility > 0.15
+  visible: landmark.visibility === undefined || landmark.visibility > 0.5
 });
 
 const drawPoseSkeleton = (ctx) => {
@@ -923,7 +767,7 @@ const drawPrivacyEyeMask = (ctx) => {
   ctx.restore();
 };
 
-const getVisibleLandmark = (index, minVisibility = 0.15) => {
+const getVisibleLandmark = (index, minVisibility = 0.35) => {
   const landmark = poseLandmarks.value[index];
   if (!landmark) return null;
   if (landmark.visibility !== undefined && landmark.visibility < minVisibility) return null;
@@ -1261,12 +1105,12 @@ const initMediaPipe = async () => {
   }
 
   handsInstance = new window.Hands({
-    locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
 
   handsInstance.setOptions({
     maxNumHands: 2,
-    modelComplexity: 0,
+    modelComplexity: 1,
     minDetectionConfidence: 0.25,
     minTrackingConfidence: 0.25
   });
@@ -1274,11 +1118,11 @@ const initMediaPipe = async () => {
   handsInstance.onResults(onHandResults);
 
   poseInstance = new window.Pose({
-    locateFile: (file) => `https://unpkg.com/@mediapipe/pose/${file}`
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
   });
 
   poseInstance.setOptions({
-    modelComplexity: 0,
+    modelComplexity: 1,
     smoothLandmarks: true,
     enableSegmentation: false,
     minDetectionConfidence: 0.25,
@@ -1305,21 +1149,14 @@ const startCameraStream = async () => {
   if (!videoElement.value) return;
 
   try {
-    const constraints = {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
       video: {
         width: { ideal: 640 },
         height: { ideal: 480 },
         facingMode: 'user'
       },
       audio: false
-    };
-
-    if (selectedCameraId.value) {
-      constraints.video.deviceId = { exact: selectedCameraId.value };
-      delete constraints.video.facingMode;
-    }
-
-    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    });
 
     videoElement.value.srcObject = cameraStream;
     await new Promise((resolve) => {
@@ -1345,7 +1182,7 @@ const onPoseResults = (results) => {
   if (results.poseLandmarks && results.poseLandmarks.length > 0) {
     poseLandmarks.value = results.poseLandmarks;
     visiblePoseLandmarkCount.value = results.poseLandmarks.filter(
-      landmark => landmark.visibility === undefined || landmark.visibility > 0.15
+      landmark => landmark.visibility === undefined || landmark.visibility > 0.5
     ).length;
     poseDetected.value = visiblePoseLandmarkCount.value >= 8;
   } else {
@@ -1434,7 +1271,6 @@ const updateDetectionMessage = () => {
 };
 
 const startGame = () => {
-  enterFullscreen();
   cancelAutoStartCountdown();
   gameState.value = 'playing';
   timeLeft.value = 60;
@@ -1628,51 +1464,21 @@ const startCanvasLoop = () => {
     // 1. Draw webcam feed mirrored. Keep calibration bright so users can verify camera framing.
     if (videoElement.value && (videoElement.value.readyState >= 2 || videoElement.value.videoWidth > 0)) {
       const now = Date.now();
-      
-      // 1. Hands Tracking (Throttled to 85ms - approx 12 FPS, very smooth for interactive gameplay)
-      if (!isProcessingHands && (now - lastHandsProcessTime > 85) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
-        isProcessingHands = true;
-        lastHandsProcessTime = now;
-        
-        const handsTimeoutId = setTimeout(() => {
-          if (isProcessingHands) {
-            isProcessingHands = false;
-          }
-        }, 200);
-
-        handsInstance.send({ image: videoElement.value })
-          .then(() => {
-            processedFrameCount.value += 1;
-            modelError.value = '';
-          })
-          .catch(error => {
-            console.error('Hands tracking failed:', error);
-          })
-          .finally(() => {
-            clearTimeout(handsTimeoutId);
-            isProcessingHands = false;
-          });
-      }
-
-      // 2. Pose/Posture/Shoulder ROM Tracking (Throttled to 350ms - 3 FPS is perfectly sufficient for slow joints/postures)
-      if (!isProcessingPose && (now - lastPoseProcessTime > 350) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
-        isProcessingPose = true;
-        lastPoseProcessTime = now;
-        
-        const poseTimeoutId = setTimeout(() => {
-          if (isProcessingPose) {
-            isProcessingPose = false;
-          }
-        }, 500);
-
-        poseInstance.send({ image: videoElement.value })
-          .catch(error => {
-            console.error('Pose tracking failed:', error);
-          })
-          .finally(() => {
-            clearTimeout(poseTimeoutId);
-            isProcessingPose = false;
-          });
+      if (!isProcessingFrame && (now - lastModelProcessTime > 50) && (gameState.value === 'calibrating' || gameState.value === 'playing')) {
+        isProcessingFrame = true;
+        lastModelProcessTime = now;
+        Promise.all([
+          handsInstance.send({ image: videoElement.value }),
+          poseInstance.send({ image: videoElement.value })
+        ]).then(() => {
+          processedFrameCount.value += 1;
+          modelError.value = '';
+        }).catch(error => {
+          console.error('MediaPipe frame processing failed:', error);
+          modelError.value = 'โมเดลประมวลผลภาพล้มเหลว กรุณาลองรีเฟรชหรือเช็กอินเทอร์เน็ต';
+        }).finally(() => {
+          isProcessingFrame = false;
+        });
       }
 
       ctx.save();
@@ -1723,29 +1529,56 @@ const startCanvasLoop = () => {
       ctx.restore();
     }
 
-    // Broadcast live telemetry data to window object for doctor observation console
-    window.__lastLiveTelemetry = {
-      timestamp: Date.now(),
-      postureStatus: postureStatus.value,
-      isCompensating: isCompensating.value,
-      leftFingerZ: leftFingerZ.value,
-      leftHandSpasticityScore: leftHandSpasticityScore.value,
-      leftHandSpasticity: leftHandSpasticity.value,
-      leftHandDetected: leftHandDetected.value,
-      rightFingerZ: rightFingerZ.value,
-      rightHandSpasticityScore: rightHandSpasticityScore.value,
-      rightHandSpasticity: rightHandSpasticity.value,
-      rightHandDetected: rightHandDetected.value,
-      leftShoulderAngle: leftShoulderAngle.value,
-      rightShoulderAngle: rightShoulderAngle.value,
-      currentHeartRate: currentHeartRate.value,
-      bleConnected: bleConnected.value,
-      bleDeviceName: bleDeviceName.value,
-      gameMode: gameMode.value,
-      score: score.value,
-      timeLeft: timeLeft.value,
-      targetsHit: targetsHit.value
-    };
+    if (poseDetected.value) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.roundRect(CANVAS_WIDTH - 222, 16, 206, 34, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#bae6fd';
+      ctx.font = "bold 13px 'Inter', sans-serif";
+      ctx.textAlign = 'left';
+      ctx.fillText(`ท่าทาง: ${postureStatus.value}`, CANVAS_WIDTH - 206, 38);
+      ctx.restore();
+    }
+
+    if (leftHandDetected.value || rightHandDetected.value) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = 'rgba(45, 212, 191, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.roundRect(CANVAS_WIDTH - 222, 56, 206, 94, 8);
+      ctx.fill();
+      ctx.stroke();
+      
+      ctx.fillStyle = '#2dd4bf';
+      ctx.font = "bold 11px 'Inter', sans-serif";
+      ctx.fillText('📡 3D DEPTH & SPASTICITY', CANVAS_WIDTH - 208, 72);
+      
+      ctx.font = "11px 'Inter', sans-serif";
+      if (leftHandDetected.value) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`L Z-Depth: ${leftFingerZ.value.toFixed(3)}`, CANVAS_WIDTH - 208, 90);
+        ctx.fillStyle = leftHandSpasticityScore.value > 60 ? '#ef4444' : (leftHandSpasticityScore.value > 40 ? '#f59e0b' : '#34d399');
+        ctx.fillText(`L เกร็ง: ${leftHandSpasticity.value}`, CANVAS_WIDTH - 208, 104);
+      } else {
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('L Hand: ไม่พบการสแกน', CANVAS_WIDTH - 208, 97);
+      }
+      
+      if (rightHandDetected.value) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`R Z-Depth: ${rightFingerZ.value.toFixed(3)}`, CANVAS_WIDTH - 208, 122);
+        ctx.fillStyle = rightHandSpasticityScore.value > 60 ? '#ef4444' : (rightHandSpasticityScore.value > 40 ? '#f59e0b' : '#34d399');
+        ctx.fillText(`R เกร็ง: ${rightHandSpasticity.value}`, CANVAS_WIDTH - 208, 136);
+      } else {
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('R Hand: ไม่พบการสแกน', CANVAS_WIDTH - 208, 129);
+      }
+      ctx.restore();
+    }
 
     // 3. Draw Left & Right Rest Zones
     ctx.save();
@@ -2053,7 +1886,6 @@ const startCanvasLoop = () => {
           leftShoulderAngle: leftShoulderAngle.value,
           rightShoulderAngle: rightShoulderAngle.value,
           compensatoryMovement: isCompensating.value,
-          heartRate: currentHeartRate.value,
           usedHand: detectedHandHit !== 'none' ? detectedHandHit : 'none',
           postureStatus: postureStatus.value,
           state: stateMachineState.value
@@ -2099,8 +1931,7 @@ const stopAllTimers = () => {
   if (autoStartTimerId) clearInterval(autoStartTimerId);
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   autoStartTimerId = null;
-  isProcessingHands = false;
-  isProcessingPose = false;
+  isProcessingFrame = false;
 };
 
 const stopCameraStream = () => {
@@ -2188,34 +2019,10 @@ const endSession = async () => {
   }
 };
 
-const checkCameras = async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null);
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    videoDevices.value = devices.filter(d => d.kind === 'videoinput');
-    if (videoDevices.value.length > 0 && !selectedCameraId.value) {
-      selectedCameraId.value = videoDevices.value[0].deviceId;
-    }
-  } catch (e) {
-    console.error("Failed to enumerate video devices:", e);
-  }
-};
-
-const switchCamera = async () => {
-  if (cameraStream) {
-    stopCameraStream();
-    await startCameraStream();
-  }
-};
-
 onMounted(() => {
   checkOrientation();
   window.addEventListener('resize', checkOrientation);
   window.addEventListener('orientationchange', checkOrientation);
-  checkCameras();
 });
 
 onUnmounted(() => {
@@ -2388,13 +2195,10 @@ onUnmounted(() => {
 
 .hidden-video {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 640px;
-  height: 480px;
-  opacity: 0.01;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
   pointer-events: none;
-  z-index: -1;
 }
 
 /* Overlays on Canvas */
@@ -2657,10 +2461,5 @@ onUnmounted(() => {
   0% { transform: rotate(0deg); }
   50% { transform: rotate(90deg); }
   100% { transform: rotate(90deg); }
-}
-
-@keyframes heartBeat {
-  from { transform: scale(1); }
-  to { transform: scale(1.2); }
 }
 </style>
