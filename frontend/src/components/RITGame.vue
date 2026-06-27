@@ -121,6 +121,16 @@
         </div>
 
         <div class="setup-controls">
+          <!-- Camera Selector if > 1 camera detected -->
+          <div v-if="videoDevices.length > 1" style="margin-bottom: 16px; text-align: left;">
+            <label style="font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500;">🔌 พบอุปกรณ์หลายมุมกล้อง กรุณาเลือกมุมกล้องประเมิน:</label>
+            <select v-model="selectedCameraId" @change="switchCamera" style="width: 100%; background: #0f172a; color: white; border: 1.5px solid #334155; padding: 10px; border-radius: 8px; font-size: 0.85rem; outline: none; cursor: pointer;">
+              <option v-for="device in videoDevices" :key="device.deviceId" :value="device.deviceId">
+                {{ device.label || `กล้องเสริม ${videoDevices.indexOf(device) + 1}` }}
+              </option>
+            </select>
+          </div>
+          
           <button class="btn-primary" @click="startCalibration" :disabled="!patientForm.patientId || !patientForm.name">
             เริ่มการเชื่อมต่อกล้องและโมเดลประมวลผล
           </button>
@@ -130,6 +140,7 @@
 
     <!-- Calibration / Testing Screen -->
     <div v-show="gameState === 'calibrating' || gameState === 'playing'" class="arena-wrapper">
+      <video ref="videoElement" class="hidden-video" width="640" height="480" autoplay playsinline muted></video>
 
       <!-- Main Interaction Canvas -->
       <div class="canvas-container">
@@ -266,15 +277,14 @@
           <div class="progress-bar-fill" :style="{ width: `${(60 - timeLeft) / 60 * 100}%` }"></div>
         </div>
 
-        <!-- Clinical Webcam Preview -->
-        <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; display: flex; flex-direction: column; align-items: center;">
-          <span style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; font-weight: 500;">กล้องตรวจสอบสรีระผู้ป่วย (Webcam Monitor)</span>
-          <div style="width: 100%; border-radius: 8px; overflow: hidden; border: 1.5px solid rgba(255,255,255,0.15); background: #000; aspect-ratio: 4/3; position: relative;">
-            <video ref="videoElement" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block;"></video>
-            <div v-if="!cameraReady" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(15,23,42,0.85); color: #94a3b8; font-size: 0.75rem;">
-              กำลังเปิดกล้อง...
-            </div>
-          </div>
+        <!-- Camera Selector in Sidebar (Only shown if > 1 camera is connected) -->
+        <div v-if="videoDevices.length > 1" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; text-align: left; width: 100%;">
+          <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 6px; font-weight: 500;">🔄 สลับมุมกล้องประเมิน:</label>
+          <select v-model="selectedCameraId" @change="switchCamera" style="width: 100%; background: #0f172a; color: white; border: 1.5px solid #334155; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; outline: none; cursor: pointer;">
+            <option v-for="device in videoDevices" :key="device.deviceId" :value="device.deviceId">
+              {{ device.label || `กล้องตัวที่ ${videoDevices.indexOf(device) + 1}` }}
+            </option>
+          </select>
         </div>
 
         <button class="btn-secondary abort-btn" @click="abortSession" style="margin-top: 12px;">
@@ -482,6 +492,8 @@ const modelError = ref('');
 const postureStatus = ref('รอตรวจจับท่าทาง');
 const recordingStatus = ref('ยังไม่เริ่มบันทึก');
 const isRecordingVideo = ref(false);
+const videoDevices = ref([]);
+const selectedCameraId = ref('');
 
 const calculateHandSpasticity = (landmarks) => {
   if (!landmarks || landmarks.length < 21) return { score: 0, status: 'ปกติ' };
@@ -1293,14 +1305,21 @@ const startCameraStream = async () => {
   if (!videoElement.value) return;
 
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
+    const constraints = {
       video: {
         width: { ideal: 640 },
         height: { ideal: 480 },
         facingMode: 'user'
       },
       audio: false
-    });
+    };
+
+    if (selectedCameraId.value) {
+      constraints.video.deviceId = { exact: selectedCameraId.value };
+      delete constraints.video.facingMode;
+    }
+
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
 
     videoElement.value.srcObject = cameraStream;
     await new Promise((resolve) => {
@@ -2169,10 +2188,34 @@ const endSession = async () => {
   }
 };
 
+const checkCameras = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null);
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    videoDevices.value = devices.filter(d => d.kind === 'videoinput');
+    if (videoDevices.value.length > 0 && !selectedCameraId.value) {
+      selectedCameraId.value = videoDevices.value[0].deviceId;
+    }
+  } catch (e) {
+    console.error("Failed to enumerate video devices:", e);
+  }
+};
+
+const switchCamera = async () => {
+  if (cameraStream) {
+    stopCameraStream();
+    await startCameraStream();
+  }
+};
+
 onMounted(() => {
   checkOrientation();
   window.addEventListener('resize', checkOrientation);
   window.addEventListener('orientationchange', checkOrientation);
+  checkCameras();
 });
 
 onUnmounted(() => {
