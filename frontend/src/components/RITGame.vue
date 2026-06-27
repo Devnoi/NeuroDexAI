@@ -782,7 +782,7 @@ const POSE_LANDMARK_LABELS = {
 const toCanvasPoint = (landmark) => ({
   x: (1 - landmark.x) * CANVAS_WIDTH,
   y: landmark.y * CANVAS_HEIGHT,
-  visible: landmark.visibility === undefined || landmark.visibility > 0.5
+  visible: landmark.visibility === undefined || landmark.visibility > 0.15
 });
 
 const drawPoseSkeleton = (ctx) => {
@@ -892,7 +892,7 @@ const drawPrivacyEyeMask = (ctx) => {
   ctx.restore();
 };
 
-const getVisibleLandmark = (index, minVisibility = 0.35) => {
+const getVisibleLandmark = (index, minVisibility = 0.15) => {
   const landmark = poseLandmarks.value[index];
   if (!landmark) return null;
   if (landmark.visibility !== undefined && landmark.visibility < minVisibility) return null;
@@ -1307,7 +1307,7 @@ const onPoseResults = (results) => {
   if (results.poseLandmarks && results.poseLandmarks.length > 0) {
     poseLandmarks.value = results.poseLandmarks;
     visiblePoseLandmarkCount.value = results.poseLandmarks.filter(
-      landmark => landmark.visibility === undefined || landmark.visibility > 0.5
+      landmark => landmark.visibility === undefined || landmark.visibility > 0.15
     ).length;
     poseDetected.value = visiblePoseLandmarkCount.value >= 8;
   } else {
