@@ -1,23 +1,32 @@
-const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/$/, '');
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const getConfig = () => ({
+  url: process.env.SUPABASE_URL?.replace(/\/$/, ''),
+  key: process.env.SUPABASE_SERVICE_ROLE_KEY
+});
 
-const headers = {
-  apikey: SUPABASE_SERVICE_ROLE_KEY || '',
-  Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY || ''}`,
-  'Content-Type': 'application/json'
+const getHeaders = () => {
+  const { key } = getConfig();
+  return {
+    apikey: key || '',
+    Authorization: `Bearer ${key || ''}`,
+    'Content-Type': 'application/json'
+  };
 };
 
-export const isSupabaseConfigured = () => Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+export const isSupabaseConfigured = () => {
+  const { url, key } = getConfig();
+  return Boolean(url && key);
+};
 
 const request = async (path, options = {}) => {
+  const { url } = getConfig();
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase is not configured');
   }
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const response = await fetch(`${url}/rest/v1/${path}`, {
     ...options,
     headers: {
-      ...headers,
+      ...getHeaders(),
       ...(options.headers || {})
     }
   });
