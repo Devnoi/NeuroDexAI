@@ -130,8 +130,6 @@
 
     <!-- Calibration / Testing Screen -->
     <div v-show="gameState === 'calibrating' || gameState === 'playing'" class="arena-wrapper">
-      <!-- Hidden Video Element for MediaPipe -->
-      <video ref="videoElement" class="hidden-video" width="640" height="480" autoplay playsinline muted></video>
 
       <!-- Main Interaction Canvas -->
       <div class="canvas-container">
@@ -268,7 +266,18 @@
           <div class="progress-bar-fill" :style="{ width: `${(60 - timeLeft) / 60 * 100}%` }"></div>
         </div>
 
-        <button class="btn-secondary abort-btn" @click="abortSession">
+        <!-- Clinical Webcam Preview -->
+        <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; display: flex; flex-direction: column; align-items: center;">
+          <span style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; font-weight: 500;">กล้องตรวจสอบสรีระผู้ป่วย (Webcam Monitor)</span>
+          <div style="width: 100%; border-radius: 8px; overflow: hidden; border: 1.5px solid rgba(255,255,255,0.15); background: #000; aspect-ratio: 4/3; position: relative;">
+            <video ref="videoElement" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block;"></video>
+            <div v-if="!cameraReady" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(15,23,42,0.85); color: #94a3b8; font-size: 0.75rem;">
+              กำลังเปิดกล้อง...
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-secondary abort-btn" @click="abortSession" style="margin-top: 12px;">
           ยกเลิกการประเมิน
         </button>
       </div>
