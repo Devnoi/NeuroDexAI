@@ -1394,6 +1394,7 @@ const updateDetectionMessage = () => {
 };
 
 const startGame = () => {
+  enterFullscreen();
   cancelAutoStartCountdown();
   gameState.value = 'playing';
   timeLeft.value = 60;
