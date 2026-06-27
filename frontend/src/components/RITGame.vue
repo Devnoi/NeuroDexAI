@@ -1240,7 +1240,7 @@ const initMediaPipe = async () => {
   }
 
   handsInstance = new window.Hands({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
+    locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`
   });
 
   handsInstance.setOptions({
@@ -1253,7 +1253,7 @@ const initMediaPipe = async () => {
   handsInstance.onResults(onHandResults);
 
   poseInstance = new window.Pose({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.2.1646425224/${file}`
+    locateFile: (file) => `https://unpkg.com/@mediapipe/pose/${file}`
   });
 
   poseInstance.setOptions({

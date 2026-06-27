@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- MediaPipe Hands CDN Dependencies -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.4/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.2.1646425224/pose.js" crossorigin="anonymous"></script>
+    <!-- MediaPipe Local Dependencies (Bypass CDN Offline errors) -->
+    <script src="/camera_utils.js"></script>
+    <script src="/drawing_utils.js"></script>
+    <script src="/hands.js"></script>
+    <script src="/pose.js"></script>
   </head>
   <body>
     <div id="app"></div>
