@@ -135,7 +135,7 @@
 
       <!-- Main Interaction Canvas -->
       <div class="canvas-container">
-        <canvas ref="canvasElement" width="800" height="500" class="game-canvas glass-panel"></canvas>
+        <canvas ref="canvasElement" width="800" height="500" class="game-canvas glass-panel" @click="handleCanvasClick"></canvas>
 
 
         <!-- Interactive Overlay Messages -->
@@ -163,6 +163,16 @@
           <p class="highlight" v-else-if="leftHandDetected && rightHandDetected">ตรวจจับพบมือทั้งสองข้างแล้ว! กรุณาวางนิ้วชี้ซ้ายในโซนพักซ้าย และนิ้วชี้ขวาในโซนพักขวาเพื่อเริ่มทดสอบ</p>
           <p class="warning" v-else>กำลังรอการตรวจจับมือและสรีระ (มือซ้าย: {{ leftHandDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }}, มือขวา: {{ rightHandDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }}, สรีระ: {{ poseDetected ? 'ตรวจพบแล้ว' : 'กำลังค้นหา' }})...</p>
           <p class="subtitle" v-if="leftHandDetected && rightHandDetected && autoStartCountdown === 0">ระบบจะนับถอยหลังทันทีเมื่อวางนิ้วชี้ทั้งสองข้างในโซนพักถูกต้อง</p>
+          
+          <!-- Skip Calibration Actions -->
+          <div style="margin-top: 22px; display: flex; gap: 14px; justify-content: center; width: 100%;">
+            <button class="btn-primary" @click="startGame" style="background: #2563eb; border: none; padding: 10px 22px; border-radius: 6px; font-weight: bold; cursor: pointer; color: white;">
+              ⏩ ข้ามการปรับเทียบและเริ่มการทดสอบ (Skip to Test)
+            </button>
+            <button class="btn-secondary" @click="abortSession" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); padding: 10px 22px; border-radius: 6px; font-weight: bold; cursor: pointer; color: white;">
+              กลับไปตั้งค่าใหม่
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1393,6 +1403,30 @@ const updateDetectionMessage = () => {
     return;
   }
   lastDetectionMessage.value = 'กำลังสแกนมือ แขน และลำตัว';
+};
+
+const handleCanvasClick = (event) => {
+  if (gameState.value !== 'playing') return;
+  const canvas = canvasElement.value;
+  if (!canvas) return;
+  
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clickX = (event.clientX - rect.left) * scaleX;
+  const clickY = (event.clientY - rect.top) * scaleY;
+  
+  if (activeTarget.value) {
+    const dx = clickX - activeTarget.value.x;
+    const dy = clickY - activeTarget.value.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    // Support hit if click falls inside or near the target balloon
+    if (dist <= 60) {
+      console.log("Simulating hand hit via mouse click");
+      handleTargetHit(activeTarget.value, patientForm.affectedSide || 'right');
+    }
+  }
 };
 
 const startGame = () => {
