@@ -135,7 +135,7 @@
 
       <!-- Main Interaction Canvas -->
       <div class="canvas-container">
-        <canvas ref="canvasElement" width="800" height="500" class="game-canvas glass-panel" @click="handleCanvasClick"></canvas>
+        <canvas ref="canvasElement" width="800" height="500" class="game-canvas glass-panel"></canvas>
 
 
         <!-- Interactive Overlay Messages -->
@@ -1240,12 +1240,12 @@ const initMediaPipe = async () => {
   }
 
   handsInstance = new window.Hands({
-    locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
   });
 
   handsInstance.setOptions({
     maxNumHands: 2,
-    modelComplexity: 1,
+    modelComplexity: 0,
     minDetectionConfidence: 0.25,
     minTrackingConfidence: 0.25
   });
@@ -1253,11 +1253,11 @@ const initMediaPipe = async () => {
   handsInstance.onResults(onHandResults);
 
   poseInstance = new window.Pose({
-    locateFile: (file) => `https://unpkg.com/@mediapipe/pose/${file}`
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.2.1646425224/${file}`
   });
 
   poseInstance.setOptions({
-    modelComplexity: 1,
+    modelComplexity: 0,
     smoothLandmarks: true,
     enableSegmentation: false,
     minDetectionConfidence: 0.25,
@@ -1403,30 +1403,6 @@ const updateDetectionMessage = () => {
     return;
   }
   lastDetectionMessage.value = 'กำลังสแกนมือ แขน และลำตัว';
-};
-
-const handleCanvasClick = (event) => {
-  if (gameState.value !== 'playing') return;
-  const canvas = canvasElement.value;
-  if (!canvas) return;
-  
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  const clickX = (event.clientX - rect.left) * scaleX;
-  const clickY = (event.clientY - rect.top) * scaleY;
-  
-  if (activeTarget.value) {
-    const dx = clickX - activeTarget.value.x;
-    const dy = clickY - activeTarget.value.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    
-    // Support hit if click falls inside or near the target balloon
-    if (dist <= 60) {
-      console.log("Simulating hand hit via mouse click");
-      handleTargetHit(activeTarget.value, patientForm.affectedSide || 'right');
-    }
-  }
 };
 
 const startGame = () => {
